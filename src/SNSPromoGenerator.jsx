@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Copy, Upload, ChevronDown, ChevronUp, Instagram, Facebook, Twitter, Sparkles, Target, MessageSquare, Hash, Image, Zap, Settings, Loader, Key, Camera, Eye, X, Lock, Shield, AlertTriangle, TrendingUp } from 'lucide-react';
+import { Copy, Upload, ChevronDown, ChevronUp, Instagram, Facebook, Twitter, Sparkles, Target, MessageSquare, Hash, Image, Zap, Settings, Loader, Key, Camera, Eye, X, Lock, Shield, AlertTriangle, TrendingUp, Download } from 'lucide-react';
+import html2canvas from 'html2canvas';
 
+// v1.6 - 패턴 분석 기능 추가 (2026-01-09)
 const API_URL = 'https://blog-gen-api.myblog-tools.workers.dev';
 
 const SNSPromoGenerator = () => {
@@ -55,10 +57,24 @@ const SNSPromoGenerator = () => {
   const [productImagePreview, setProductImagePreview] = useState(''); // 미리보기 URL
   const [referenceImage, setReferenceImage] = useState(null); // 기준 사진 (base64)
   const [referenceImagePreview, setReferenceImagePreview] = useState(''); // 기준 사진 미리보기
+  const [referenceText, setReferenceText] = useState(''); // 기준 스타일 텍스트
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [imageAnalysisResult, setImageAnalysisResult] = useState('');
   const productImageRef = useRef(null);
   const referenceImageRef = useRef(null);
+  const cardPreviewRef = useRef(null);
+
+  // 이미지 카드 다운로드 상태
+  const [showCardPreview, setShowCardPreview] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  // 암호화폐 분석 관련 추가 필드
+  const [referralCode, setReferralCode] = useState('63sl3029'); // 레퍼럴 코드 (비트겟 추천인)
+  const [telegramUrl, setTelegramUrl] = useState('https://t.me/V30_Signal_bot'); // 텔레그램 주소
+  const [cryptoTimeframe, setCryptoTimeframe] = useState('4H'); // 분석 시간대
+  const [cryptoSymbol, setCryptoSymbol] = useState('BTC'); // 코인 심볼
+  const [patternAnalysisResult, setPatternAnalysisResult] = useState(null); // 패턴 분석 결과
+  const [isAnalyzingPattern, setIsAnalyzingPattern] = useState(false); // 패턴 분석 중
 
   // 실시간 트렌드 분석 관련 상태
   const [useTrendAnalysis, setUseTrendAnalysis] = useState(true);
@@ -114,7 +130,8 @@ const SNSPromoGenerator = () => {
 
         setLicenseInfo({
           ...data,
-          tier: isSNSPro ? 'snsPro' : 'sns'
+          tier: isSNSPro ? 'snsPro' : 'sns',
+          originalTier: tier // 원본 tier 저장 (암호화폐 기능 체크용)
         });
         localStorage.setItem('snsLicenseKey', key);
         setShowLicenseModal(false);
@@ -148,6 +165,13 @@ const SNSPromoGenerator = () => {
   // Pro 기능 사용 가능 여부
   const isProFeatureAvailable = () => {
     return licenseInfo?.tier === 'snsPro';
+  };
+
+  // 암호화폐 분석 기능 사용 가능 여부 (master 또는 cryptoAccess 권한)
+  const isCryptoAvailable = () => {
+    const originalTier = licenseInfo?.originalTier;
+    // master는 항상 가능, cryptoAccess tier는 문의 후 부여
+    return originalTier === 'master' || originalTier === 'cryptoAccess';
   };
 
   // API 키 저장
@@ -283,53 +307,176 @@ ${productName ? `제품명: ${productName}` : ''}`;
         // 제품 사진만 있는 경우 - 단독 분석
         if (contentType === 'crypto') {
           // 암호화폐 차트 분석 모드
-          prompt = `당신은 암호화폐 기술적 분석 전문가입니다.
+          // 패턴 분석 결과가 있으면 프롬프트에 포함
+          const patternInfo = patternAnalysisResult && !patternAnalysisResult.error ? `
+## 실시간 패턴 분석 데이터 (OKX API)
+아래 데이터를 분석에 반드시 참고하여 글에 반영하세요:
+- 코인: ${patternAnalysisResult.symbol}
+- 시간대: ${getTimeframeLabel(patternAnalysisResult.timeframe)}봉
+- 현재가: $${patternAnalysisResult.currentPrice?.toLocaleString()}
+- 거래량: ${patternAnalysisResult.features.volRatio.toFixed(1)}x (${patternAnalysisResult.features.volRatio >= 2 ? '급증' : patternAnalysisResult.features.volRatio >= 1.5 ? '증가' : '보통'})
+- 위치: ${patternAnalysisResult.features.position.toFixed(0)}% (${patternAnalysisResult.features.position >= 80 ? '고점권' : patternAnalysisResult.features.position >= 60 ? '상단' : patternAnalysisResult.features.position >= 40 ? '중간' : patternAnalysisResult.features.position >= 20 ? '하단' : '저점권'})
+- 추세: ${patternAnalysisResult.features.upCount}/5 양봉 (${patternAnalysisResult.features.upCount >= 4 ? '강상승' : patternAnalysisResult.features.upCount >= 3 ? '상승' : patternAnalysisResult.features.upCount <= 1 ? '하락' : '횡보'})
+- 유사패턴: ${patternAnalysisResult.stats.count}건 분석됨
+- 10봉 후 상승확률: ${patternAnalysisResult.stats.upProb10}%
+- 평균 변화율: ${patternAnalysisResult.stats.avgChange10 > 0 ? '+' : ''}${patternAnalysisResult.stats.avgChange10}%
+- 예측 방향: ${patternAnalysisResult.prediction} (신뢰도: ${patternAnalysisResult.confidence})
+` : '';
 
-## 작업 요청
-이 암호화폐 차트 이미지를 분석하고 SNS 홍보 글을 작성해주세요.
+          prompt = `암호화폐 차트 이미지를 상세히 분석하고 SNS 글을 작성하세요.
+${patternInfo}
+${referenceText ? `참고 스타일:\n${referenceText}\n` : ''}
 
-## 차트 분석 포인트
-- 차트 종류 (캔들스틱, 라인 등)
-- 시간 프레임 (1분, 1시간, 4시간, 일봉 등)
-- 현재 추세 (상승/하락/횡보)
-- 이동평균선 위치 및 교차
-- 주요 지지선/저항선
-- 캔들스틱 패턴 (있다면)
-- 거래량 분석 (보이는 경우)
-- RSI, MACD 등 기술적 지표 (보이는 경우)
+## 🔍 차트 이미지 분석 (이미지 기반 + 전문 분석!)
 
-## 출력 형식
-**[차트 분석]**
-- 코인/토큰: (식별 가능한 경우)
-- 시간 프레임:
-- 현재 가격대:
-- 추세:
-- 주요 지지선:
-- 주요 저항선:
-- 기술적 신호:
+### 차트에서 보이는 것 분석:
+1. **거래량 분석**: 거래량 바 - 증가/감소 추세, 거래량 폭발 캔들, 거래량 다이버전스
+2. **지지/저항 구간**: 여러 번 반등/저항받은 가격대, 매물대 분석
+3. **캔들 패턴**: 도지, 망치형, 장악형, 샅별형, 하라미 등
+4. **이동평균선**: MA 배열 (정배열/역배열), 골든크로스/데드크로스, 지지/저항 역할
+5. **볼린저밴드**: 밴드 폭 (수축=큰 변동 예고), 현재 가격 위치
+6. **추세선 & 채널**: 상승/하락 추세선, 평행 채널
+7. **보조지표**: RSI (과매수/과매도), MACD (시그널 크로스), 스토캐스틱
 
-**[매매 관점]**
-📈 롱(매수) 관점:
-- 진입가:
-- 목표가:
-- 손절가:
+### 전문 분석 요소 (글에 포함):
+- **CME 갭**: 주말 CME 선물 마감 후 발생한 갭 위치, 갭 메우기 가능성
+- **피보나치 되돌림**: 0.382, 0.5, 0.618 레벨 분석
+- **청산 레벨**: 예상 롱/숏 청산 집중 구간
+- **펀딩비**: 롱/숏 과열 여부
+- **미결제약정(OI)**: 포지션 증가/감소 추세
+- **공포탐욕지수**: 현재 시장 심리
 
-📉 숏(매도) 관점:
-- 진입가:
-- 목표가:
-- 손절가:
+## 출력 규칙
+🚫 절대 금지: "좋습니다", "알겠습니다" 등 인사말, "**[라벨]**" 형식
+✅ 바로 복사 가능한 글만 출력!
 
-**[SNS 홍보 글 - ${platformInfo}]**
-(완성된 분석 글 - 전문적이면서 이해하기 쉽게)
+## 출력 형식 (${platformInfo})
+${selectedPlatforms.includes('threads') ? `
+---메인글---
+(480~500자 꽉 채워서!)
 
-**[추천 해시태그]**
-#비트코인 #암호화폐 #차트분석 등 관련 해시태그 15~20개
+🚨 [코인명] [시간봉] 긴급 분석 🚨
+
+📊 시장 현황:
+- 현재가 & 24h 변동
+- 거래량 분석 (특이사항)
+- CME 갭 위치 언급 (있다면)
+
+🔍 기술적 분석:
+- 주요 지지/저항 구간 (피보나치 레벨 포함)
+- 이평선 배열 & 볼린저밴드 상태
+- 캔들 패턴 & RSI/MACD 신호
+
+💰 매매 전략:
+📈 롱: 진입 / TP1 / TP2 / SL
+📉 숏: 진입 / TP1 / TP2 / SL
+
+🔥 텔레그램에서 제가 직접 제작한 시그널 지표 무료 공유! 실시간 차트 분석 & 토론 함께해요!
+👉 비트겟: https://partner.bitget.com/bg/AZ6Z8S (추천인: 63sl3029)
+📢 채널: https://t.me/V38_Signal
+
+#BTC #비트코인 #차트분석 #매매전략 #코인
+
+⚠️ 투자 책임은 본인에게 있습니다.
+
+---댓글글---
+📌 심화 분석
+
+🎯 청산 레벨:
+- 롱 청산 집중구간: $XX,XXX
+- 숏 청산 집중구간: $XX,XXX
+
+📈 추가 지표:
+- 펀딩비 현황
+- 미결제약정(OI) 추세
+- 시장 심리 (공포/탐욕)
+
+💬 더 자세한 분석이 궁금하시면 텔레그램에서 만나요!
+문의: https://t.me/V30_Signal_bot
+` : ''}${selectedPlatforms.includes('instagram') ? `
+---인스타그램--- (1500~2000자 상세하게!)
+
+🚨 [코인명] [시간봉] 전문 분석 🚨
+
+📊 시장 현황 분석:
+- 현재가, 24h 변동률, 주요 뉴스
+- 거래량 분석 (이전 대비, 특이 캔들)
+- CME 갭 분석 (위치, 메우기 가능성)
+
+🔍 기술적 분석:
+- 주요 지지선/저항선 (가격대 + 이유)
+- 피보나치 되돌림 레벨 (0.382, 0.5, 0.618)
+- 이평선 분석 (골든크로스/데드크로스, 배열)
+- 볼린저밴드 (수축/확장, 현재 위치)
+- RSI & MACD 분석
+- 캔들 패턴
+
+📈 온체인 & 파생상품:
+- 청산 레벨 (롱/숏 집중 구간)
+- 펀딩비 현황
+- 미결제약정(OI) 추세
+- 공포탐욕지수
+
+💰 매매 전략:
+📈 롱: 진입가 / 목표1 / 목표2 / 손절가 (근거 설명)
+📉 숏: 진입가 / 목표1 / 목표2 / 손절가 (근거 설명)
+
+🔥 텔레그램 채널에서 제가 직접 제작한 시그널 지표를 무료로 공유하고 있습니다! 실시간으로 차트 분석하고 함께 토론해요!
+
+👉 비트겟 가입: https://partner.bitget.com/bg/AZ6Z8S (추천인: 63sl3029)
+📢 텔레그램 채널: https://t.me/V38_Signal
+💬 문의: https://t.me/V30_Signal_bot
+
+해시태그 15개
 
 ⚠️ 본 분석은 개인적인 의견이며 투자 권유가 아닙니다. 투자의 책임은 본인에게 있습니다.
+` : ''}${selectedPlatforms.includes('twitter') ? `
+---트위터--- (280자 이내)
 
-${includeEmoji ? '이모지를 적극 활용하세요 (📈📉🎯⚠️💰).' : ''}
-톤앤매너: ${getToneLabel(tone)}
-${brandName ? `채널명: ${brandName}` : ''}`;
+🚨 [코인명] [시간봉] 분석
+
+📊 현재가 $XX,XXX
+📈 지지: $XX,XXX / 저항: $XX,XXX
+🎯 롱 진입 $XX,XXX → TP $XX,XXX
+⚠️ CME갭 $XX,XXX 주목
+
+🔥 시그널 지표 무료 공유 중!
+📢 https://t.me/V38_Signal
+
+#BTC #비트코인 #차트분석
+` : ''}${selectedPlatforms.includes('facebook') ? `
+---페이스북--- (800~1000자)
+
+🚨 [코인명] [시간봉] 차트 분석 🚨
+
+📊 시장 현황:
+- 현재가 & 거래량 분석
+- CME 갭 위치 (있다면)
+- 주요 지지/저항 구간
+
+🔍 기술적 분석:
+- 이평선 & 볼린저밴드
+- RSI/MACD 신호
+- 피보나치 레벨
+
+💰 매매 전략:
+📈 롱: 진입 / TP1 / TP2 / SL
+📉 숏: 진입 / TP1 / TP2 / SL
+
+📈 파생상품 지표:
+- 청산 레벨, 펀딩비, OI 추세
+
+🔥 텔레그램에서 제가 직접 만든 시그널 지표 무료 공유! 함께 차트 보며 토론해요!
+👉 비트겟: https://partner.bitget.com/bg/AZ6Z8S (추천인: 63sl3029)
+📢 텔레그램: https://t.me/V38_Signal
+💬 문의: https://t.me/V30_Signal_bot
+
+#BTC #비트코인 #차트분석 #매매전략 #코인
+
+⚠️ 투자 책임은 본인에게 있습니다.
+` : ''}
+${includeEmoji ? '이모지 적극 활용! (📈📉🎯⚠️💰🔥🚀📊💹)' : ''}
+톤: ${getToneLabel(tone)}`;
         } else {
           prompt = `당신은 SNS 마케팅 전문 카피라이터입니다.
 
@@ -751,6 +898,416 @@ ${productName ? `제품명: ${productName}` : ''}`;
     navigator.clipboard.writeText(generatedContent);
     setContentCopySuccess(true);
     setTimeout(() => setContentCopySuccess(false), 2000);
+  };
+
+  // 카드 이미지 다운로드 함수
+  const downloadCardAsImage = async () => {
+    if (!cardPreviewRef.current) return;
+
+    setIsDownloading(true);
+    try {
+      const canvas = await html2canvas(cardPreviewRef.current, {
+        backgroundColor: '#1a1a2e',
+        scale: 2,
+        useCORS: true,
+        allowTaint: true
+      });
+
+      const link = document.createElement('a');
+      link.download = `crypto-analysis-${Date.now()}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    } catch (error) {
+      console.error('이미지 다운로드 오류:', error);
+      alert('이미지 다운로드 중 오류가 발생했습니다.');
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  // 분석 결과에서 SNS 포스팅 글만 추출
+  const extractSNSContent = (result) => {
+    if (!result) return '';
+
+    let content = result;
+
+    // 불필요한 서론 제거 (좋습니다, 알겠습니다 등으로 시작하는 문장)
+    content = content.replace(/^(좋습니다|알겠습니다|네|물론|분석해|작성해)[^\n]*\n*/gi, '');
+
+    // **[라벨]** 형식 제거
+    content = content.replace(/\*\*\[[^\]]+\]\*\*\n?/g, '');
+
+    // ## 헤더 제거
+    content = content.replace(/^##[^\n]*\n/gm, '');
+
+    // ---메인글---, ---댓글글--- 등 라벨 제거 (깔끔하게)
+    content = content.replace(/---메인글---\n?/g, '');
+    content = content.replace(/---댓글글---[^\n]*\n?/g, '\n');
+    content = content.replace(/---인스타그램---[^\n]*\n?/g, '');
+    content = content.replace(/---트위터---[^\n]*\n?/g, '');
+    content = content.replace(/---페이스북---[^\n]*\n?/g, '');
+
+    // 연속 빈줄 정리
+    content = content.replace(/\n{3,}/g, '\n\n');
+
+    return content.trim();
+  };
+
+  // 분석 결과에서 지지/저항선 및 방향성 정보 추출
+  const extractChartAnalysis = (result) => {
+    if (!result) return null;
+
+    const analysis = {
+      support: [],
+      resistance: [],
+      direction: 'neutral', // 'up', 'down', 'neutral'
+      targets: []
+    };
+
+    // 지지선 추출 (다양한 패턴)
+    const supportPatterns = [
+      /주요\s*지지선?[:\s]*\$?([\d,]+)/gi,
+      /지지[가대선]?[:\s]*\$?([\d,]+)/gi,
+      /support[:\s]*\$?([\d,]+)/gi,
+      /바닥[가대]?[:\s]*\$?([\d,]+)/gi
+    ];
+
+    supportPatterns.forEach(pattern => {
+      let match;
+      while ((match = pattern.exec(result)) !== null) {
+        const price = match[1].replace(/,/g, '');
+        if (!analysis.support.includes(price)) {
+          analysis.support.push(price);
+        }
+      }
+    });
+
+    // 저항선 추출
+    const resistancePatterns = [
+      /주요\s*저항선?[:\s]*\$?([\d,]+)/gi,
+      /저항[가대선]?[:\s]*\$?([\d,]+)/gi,
+      /resistance[:\s]*\$?([\d,]+)/gi,
+      /목표[가대]?[:\s]*\$?([\d,]+)/gi,
+      /돌파\s*시도[:\s]*\$?([\d,]+)/gi
+    ];
+
+    resistancePatterns.forEach(pattern => {
+      let match;
+      while ((match = pattern.exec(result)) !== null) {
+        const price = match[1].replace(/,/g, '');
+        if (!analysis.resistance.includes(price)) {
+          analysis.resistance.push(price);
+        }
+      }
+    });
+
+    // 방향성 추출
+    if (/상승|롱|매수|강세|bullish|상방/i.test(result)) {
+      analysis.direction = 'up';
+    } else if (/하락|숏|매도|약세|bearish|하방/i.test(result)) {
+      analysis.direction = 'down';
+    }
+
+    return analysis;
+  };
+
+  // ============================================
+  // 패턴 분석 함수들 (OKX API)
+  // ============================================
+
+  // OKX 캔들 데이터 가져오기
+  const getOKXCandles = async (symbol = 'BTC-USDT', interval = '4H', limit = 100) => {
+    try {
+      const url = `https://www.okx.com/api/v5/market/candles?instId=${symbol}&bar=${interval}&limit=${limit}`;
+      const response = await fetch(url, {
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      if (!response.ok) {
+        return { error: `API 오류: ${response.status}` };
+      }
+
+      const result = await response.json();
+      if (result.code !== '0' || !result.data || !Array.isArray(result.data)) {
+        return { error: `데이터 오류: ${result.msg || result.code}` };
+      }
+
+      // OKX 데이터 형식: [timestamp, open, high, low, close, vol, volCcy, volCcyQuote, confirm]
+      const candles = [...result.data].reverse().map(c => ({
+        timestamp: parseInt(c[0]),
+        open: parseFloat(c[1]),
+        high: parseFloat(c[2]),
+        low: parseFloat(c[3]),
+        close: parseFloat(c[4]),
+        volume: parseFloat(c[5]),
+        quoteVolume: parseFloat(c[7])
+      }));
+
+      return candles;
+    } catch (error) {
+      return { error: `예외: ${error.message}` };
+    }
+  };
+
+  // 거래량 비율 계산
+  const calculateVolumeRatio = (candles, index, period = 20) => {
+    if (index < period) return 1;
+    let sumVol = 0;
+    for (let i = index - period; i < index; i++) {
+      sumVol += candles[i].volume;
+    }
+    return candles[index].volume / (sumVol / period);
+  };
+
+  // 현재 상황 특성 추출
+  const extractPatternFeatures = (candles, index) => {
+    if (index < 20) return null;
+
+    const current = candles[index];
+    const prev = candles[index - 1];
+
+    const priceChange = ((current.close - prev.close) / prev.close) * 100;
+    const volRatio = calculateVolumeRatio(candles, index, 20);
+
+    const bodySize = Math.abs(current.close - current.open);
+    const totalRange = current.high - current.low;
+    const bodyRatio = totalRange > 0 ? bodySize / totalRange : 0;
+    const isBullish = current.close > current.open;
+
+    const upperWick = current.high - Math.max(current.open, current.close);
+    const lowerWick = Math.min(current.open, current.close) - current.low;
+    const upperWickRatio = totalRange > 0 ? upperWick / totalRange : 0;
+    const lowerWickRatio = totalRange > 0 ? lowerWick / totalRange : 0;
+
+    let upCount = 0;
+    for (let i = index - 4; i <= index; i++) {
+      if (candles[i].close > candles[i].open) upCount++;
+    }
+
+    let high20 = candles[index].high;
+    let low20 = candles[index].low;
+    for (let i = index - 19; i < index; i++) {
+      high20 = Math.max(high20, candles[i].high);
+      low20 = Math.min(low20, candles[i].low);
+    }
+    const position = high20 !== low20 ? ((current.close - low20) / (high20 - low20)) * 100 : 50;
+
+    return {
+      priceChange,
+      volRatio,
+      bodyRatio,
+      isBullish,
+      upperWickRatio,
+      lowerWickRatio,
+      upCount,
+      position,
+      totalRange: (totalRange / current.close) * 100
+    };
+  };
+
+  // 유사도 점수 계산
+  const calculateSimilarity = (features1, features2) => {
+    const weights = {
+      volRatio: 25, position: 20, priceChange: 15,
+      bodyRatio: 10, upCount: 15, upperWickRatio: 7.5, lowerWickRatio: 7.5
+    };
+
+    let totalScore = 0;
+    totalScore += Math.max(0, 100 - Math.abs(features1.volRatio - features2.volRatio) * 30) * (weights.volRatio / 100);
+    totalScore += Math.max(0, 100 - Math.abs(features1.position - features2.position)) * (weights.position / 100);
+    totalScore += Math.max(0, 100 - Math.abs(features1.priceChange - features2.priceChange) * 20) * (weights.priceChange / 100);
+    totalScore += Math.max(0, 100 - Math.abs(features1.bodyRatio - features2.bodyRatio) * 100) * (weights.bodyRatio / 100);
+    totalScore += Math.max(0, 100 - Math.abs(features1.upCount - features2.upCount) * 20) * (weights.upCount / 100);
+    totalScore += Math.max(0, 100 - Math.abs(features1.upperWickRatio - features2.upperWickRatio) * 100) * (weights.upperWickRatio / 100);
+    totalScore += Math.max(0, 100 - Math.abs(features1.lowerWickRatio - features2.lowerWickRatio) * 100) * (weights.lowerWickRatio / 100);
+
+    return totalScore;
+  };
+
+  // 유사 패턴 찾기
+  const findSimilarPatterns = (candles, currentFeatures, minSimilarity = 55) => {
+    const results = [];
+
+    for (let i = 25; i < candles.length - 25; i++) {
+      const pastFeatures = extractPatternFeatures(candles, i);
+      if (!pastFeatures) continue;
+
+      const similarity = calculateSimilarity(currentFeatures, pastFeatures);
+
+      if (similarity >= minSimilarity) {
+        const price0 = candles[i].close;
+        const after5 = i + 5 < candles.length ? candles[i + 5].close : null;
+        const after10 = i + 10 < candles.length ? candles[i + 10].close : null;
+
+        let maxUp = 0, maxDown = 0;
+        for (let j = i + 1; j <= Math.min(i + 10, candles.length - 1); j++) {
+          maxUp = Math.max(maxUp, ((candles[j].high - price0) / price0) * 100);
+          maxDown = Math.min(maxDown, ((candles[j].low - price0) / price0) * 100);
+        }
+
+        results.push({
+          index: i,
+          date: new Date(candles[i].timestamp).toISOString().split('T')[0],
+          similarity,
+          after5Change: after5 ? ((after5 - price0) / price0) * 100 : null,
+          after10Change: after10 ? ((after10 - price0) / price0) * 100 : null,
+          maxUp,
+          maxDown
+        });
+      }
+    }
+
+    results.sort((a, b) => b.similarity - a.similarity);
+    return results.slice(0, 15);
+  };
+
+  // 패턴 통계 계산
+  const calculatePatternStats = (patterns) => {
+    if (patterns.length === 0) return { count: 0 };
+
+    let upCount5 = 0, upCount10 = 0;
+    let totalChange5 = 0, totalChange10 = 0;
+    let totalMaxUp = 0, totalMaxDown = 0;
+    let validCount5 = 0, validCount10 = 0;
+
+    for (const p of patterns) {
+      if (p.after5Change !== null) {
+        validCount5++;
+        totalChange5 += p.after5Change;
+        if (p.after5Change > 0) upCount5++;
+      }
+      if (p.after10Change !== null) {
+        validCount10++;
+        totalChange10 += p.after10Change;
+        if (p.after10Change > 0) upCount10++;
+      }
+      totalMaxUp += p.maxUp;
+      totalMaxDown += p.maxDown;
+    }
+
+    return {
+      count: patterns.length,
+      upProb5: validCount5 > 0 ? Math.round((upCount5 / validCount5) * 100) : 0,
+      avgChange5: validCount5 > 0 ? (totalChange5 / validCount5).toFixed(2) : 0,
+      upProb10: validCount10 > 0 ? Math.round((upCount10 / validCount10) * 100) : 0,
+      avgChange10: validCount10 > 0 ? (totalChange10 / validCount10).toFixed(2) : 0,
+      avgMaxUp: (totalMaxUp / patterns.length).toFixed(2),
+      avgMaxDown: (totalMaxDown / patterns.length).toFixed(2)
+    };
+  };
+
+  // 패턴 분석 실행
+  const runPatternAnalysis = async () => {
+    setIsAnalyzingPattern(true);
+    setPatternAnalysisResult(null);
+
+    try {
+      const symbol = cryptoSymbol.toUpperCase() + '-USDT';
+      const candles = await getOKXCandles(symbol, cryptoTimeframe, 100);
+
+      if (candles.error) {
+        setPatternAnalysisResult({ error: candles.error });
+        return;
+      }
+
+      if (!Array.isArray(candles) || candles.length < 50) {
+        setPatternAnalysisResult({ error: `데이터 부족 (${candles?.length || 0}개)` });
+        return;
+      }
+
+      const currentIndex = candles.length - 1;
+      const currentFeatures = extractPatternFeatures(candles, currentIndex);
+
+      if (!currentFeatures) {
+        setPatternAnalysisResult({ error: '분석 데이터 부족' });
+        return;
+      }
+
+      const similarPatterns = findSimilarPatterns(candles, currentFeatures, 55);
+      const stats = calculatePatternStats(similarPatterns);
+
+      // 현재 가격
+      const currentPrice = candles[currentIndex].close;
+
+      // 예측 결정
+      let prediction = '중립';
+      let confidence = '낮음';
+      if (stats.count >= 5) {
+        if (stats.upProb10 >= 70) {
+          prediction = '상승';
+          confidence = stats.upProb10 >= 80 ? '높음' : '중간';
+        } else if (stats.upProb10 <= 30) {
+          prediction = '하락';
+          confidence = stats.upProb10 <= 20 ? '높음' : '중간';
+        }
+      }
+
+      setPatternAnalysisResult({
+        symbol: cryptoSymbol,
+        timeframe: cryptoTimeframe,
+        currentPrice,
+        features: currentFeatures,
+        stats,
+        prediction,
+        confidence,
+        topPatterns: similarPatterns.slice(0, 3)
+      });
+
+    } catch (error) {
+      setPatternAnalysisResult({ error: error.message });
+    } finally {
+      setIsAnalyzingPattern(false);
+    }
+  };
+
+  // 시간대 레이블
+  const getTimeframeLabel = (tf) => {
+    const labels = {
+      '1H': '1시간', '4H': '4시간', '1D': '1일', '1W': '1주'
+    };
+    return labels[tf] || tf;
+  };
+
+  // 패턴 분석 결과를 텍스트로 변환
+  const formatPatternResult = () => {
+    if (!patternAnalysisResult || patternAnalysisResult.error) return '';
+
+    const { symbol, timeframe, currentPrice, features, stats, prediction, confidence, topPatterns } = patternAnalysisResult;
+
+    const volStatus = features.volRatio >= 2 ? '급증' : features.volRatio >= 1.5 ? '증가' : features.volRatio >= 1 ? '보통' : '감소';
+    const posStatus = features.position >= 80 ? '고점권' : features.position >= 60 ? '상단' : features.position >= 40 ? '중간' : features.position >= 20 ? '하단' : '저점권';
+    const trendStatus = features.upCount >= 4 ? '강상승' : features.upCount >= 3 ? '상승' : features.upCount <= 1 ? '하락' : '횡보';
+
+    let text = `\n\n━━━━━━━━━━━━━━━━
+📊 ${symbol} ${getTimeframeLabel(timeframe)}봉 패턴 분석
+━━━━━━━━━━━━━━━━
+
+💰 현재가: $${currentPrice.toLocaleString()}
+
+📍 현재 상황
+• 거래량: ${features.volRatio.toFixed(1)}x (${volStatus})
+• 위치: ${features.position.toFixed(0)}% (${posStatus})
+• 추세: ${features.upCount}/5 양봉 (${trendStatus})
+`;
+
+    if (stats.count > 0) {
+      text += `
+🔍 유사 패턴 분석 (${stats.count}건)
+
+📈 5봉 후: 상승확률 ${stats.upProb5}% / 평균 ${stats.avgChange5 > 0 ? '+' : ''}${stats.avgChange5}%
+📈 10봉 후: 상승확률 ${stats.upProb10}% / 평균 ${stats.avgChange10 > 0 ? '+' : ''}${stats.avgChange10}%
+
+📊 10봉 내 변동폭
+• 최대 상승: +${stats.avgMaxUp}%
+• 최대 하락: ${stats.avgMaxDown}%
+
+🎯 예측: ${prediction === '상승' ? '🟢' : prediction === '하락' ? '🔴' : '🟡'} ${prediction} (신뢰도: ${confidence})
+`;
+    } else {
+      text += `\n유사 패턴을 찾지 못했습니다.`;
+    }
+
+    return text;
   };
 
   // AI로 SNS 콘텐츠 직접 생성
@@ -1274,6 +1831,60 @@ ${useTrendAnalysis ? '\n트렌드를 반영한 해시태그와 표현을 적극 
         </p>
       </div>
 
+      {/* 전체 사용 가이드 */}
+      <div style={{
+        ...cardStyle,
+        backgroundColor: '#fefce8',
+        border: '2px solid #eab308',
+        marginTop: '16px'
+      }}>
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          cursor: 'pointer'
+        }}>
+          <div style={{ fontWeight: '600', color: '#854d0e', fontSize: '16px' }}>
+            📚 전체 사용 가이드
+          </div>
+        </div>
+
+        <div style={{ marginTop: '12px', color: '#713f12', fontSize: '13px', lineHeight: '1.8' }}>
+          <div style={{ marginBottom: '16px' }}>
+            <div style={{ fontWeight: '600', marginBottom: '8px', color: '#854d0e' }}>🎯 일반 콘텐츠 생성 (블로그/상품 홍보)</div>
+            <div style={{ paddingLeft: '12px' }}>
+              <strong>1.</strong> 상단 ⚙️ 버튼 → Gemini API 키 설정<br/>
+              <strong>2.</strong> 콘텐츠 유형 선택 (블로그 홍보 / 상품 홍보)<br/>
+              <strong>3.</strong> 블로그 URL 또는 상품 정보 입력<br/>
+              <strong>4.</strong> 원하는 SNS 플랫폼 선택<br/>
+              <strong>5.</strong> "AI 자동 생성" 버튼 클릭<br/>
+              <strong>6.</strong> 생성된 콘텐츠 복사 → SNS에 붙여넣기!
+            </div>
+          </div>
+
+          <div style={{ marginBottom: '16px' }}>
+            <div style={{ fontWeight: '600', marginBottom: '8px', color: '#854d0e' }}>📊 암호화폐 차트 분석 (권한 필요)</div>
+            <div style={{ paddingLeft: '12px' }}>
+              <strong>1.</strong> 암호화폐 차트 분석 버튼 클릭<br/>
+              <strong>2.</strong> 코인 심볼(BTC, ETH 등) & 시간대 선택<br/>
+              <strong>3.</strong> "패턴 분석" 클릭 → 과거 패턴 유사도 확인<br/>
+              <strong>4.</strong> 차트 스크린샷 업로드 (거래소에서 캡처)<br/>
+              <strong>5.</strong> "AI 이미지 분석 & 글쓰기" 클릭<br/>
+              <strong>6.</strong> 녹색 박스에서 "글 복사하기" → SNS 붙여넣기!
+            </div>
+          </div>
+
+          <div style={{
+            backgroundColor: '#fef3c7',
+            padding: '10px',
+            borderRadius: '6px',
+            marginTop: '8px'
+          }}>
+            <strong>💡 Tip:</strong> Gemini API 키는 <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" style={{ color: '#2563eb', textDecoration: 'underline' }}>Google AI Studio</a>에서 무료로 발급받을 수 있습니다!
+          </div>
+        </div>
+      </div>
+
       {/* 설정 모달 */}
       {showSettings && (
         <div style={cardStyle}>
@@ -1457,8 +2068,7 @@ ${useTrendAnalysis ? '\n트렌드를 반영한 해시태그와 표현을 적극 
             { value: 'product', label: '제품/서비스 홍보', icon: <Target size={18} />, color: '#10b981' },
             { value: 'brand', label: '브랜드 홍보', icon: <Sparkles size={18} />, color: '#8b5cf6' },
             { value: 'event', label: '이벤트/캠페인', icon: <Zap size={18} />, color: '#f59e0b' },
-            { value: 'general', label: '일반 마케팅', icon: <MessageSquare size={18} />, color: '#3b82f6' },
-            { value: 'crypto', label: '암호화폐 차트 분석', icon: <TrendingUp size={18} />, color: '#f7931a' }
+            { value: 'general', label: '일반 마케팅', icon: <MessageSquare size={18} />, color: '#3b82f6' }
           ].map((item) => (
             <button
               key={item.value}
@@ -1474,6 +2084,35 @@ ${useTrendAnalysis ? '\n트렌드를 반영한 해시태그와 표현을 적극 
               {item.label}
             </button>
           ))}
+          {/* 암호화폐 옵션 - 항상 표시하되 권한 없으면 잠금 */}
+          <button
+            onClick={() => {
+              if (isCryptoAvailable()) {
+                setContentType('crypto');
+              } else {
+                alert('🔒 암호화폐 차트 분석 기능\n\n이 기능은 별도 권한이 필요합니다.\n\n📢 비트겟 가입 (추천인: 63sl3029)\nhttps://partner.bitget.com/bg/AZ6Z8S\n\n문의: 텔레그램 @V30_Signal_bot');
+              }
+            }}
+            style={{
+              ...buttonBaseStyle,
+              backgroundColor: contentType === 'crypto' ? '#f7931a15' : isCryptoAvailable() ? '#fff' : '#f3f4f6',
+              borderColor: contentType === 'crypto' ? '#f7931a' : isCryptoAvailable() ? '#e5e7eb' : '#d1d5db',
+              color: contentType === 'crypto' ? '#f7931a' : isCryptoAvailable() ? '#374151' : '#9ca3af',
+              position: 'relative',
+              opacity: isCryptoAvailable() ? 1 : 0.8
+            }}
+          >
+            <TrendingUp size={18} />
+            암호화폐 차트 분석
+            {!isCryptoAvailable() && (
+              <Lock size={14} style={{
+                position: 'absolute',
+                top: '8px',
+                right: '8px',
+                color: '#9ca3af'
+              }} />
+            )}
+          </button>
         </div>
       </div>
 
@@ -1668,6 +2307,258 @@ ${useTrendAnalysis ? '\n트렌드를 반영한 해시태그와 표현을 적극 
         )}
       </div>
 
+      {/* 5.5 암호화폐 분석 추가 정보 (crypto 모드에서만 표시) */}
+      {contentType === 'crypto' && (
+        <div style={{
+          ...cardStyle,
+          border: '2px solid #f7931a',
+          background: 'linear-gradient(135deg, #fffbeb, #fef3c7)'
+        }}>
+          <label style={{...labelStyle, color: '#d97706', display: 'flex', alignItems: 'center', gap: '8px'}}>
+            <TrendingUp size={20} />
+            암호화폐 분석 추가 정보
+          </label>
+
+          {/* 사용 설명서 */}
+          <div style={{
+            marginBottom: '16px',
+            padding: '16px',
+            backgroundColor: '#fef3c7',
+            borderRadius: '12px',
+            border: '2px dashed #f59e0b'
+          }}>
+            <div style={{ fontSize: '14px', fontWeight: '700', color: '#92400e', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              📖 사용 방법
+            </div>
+            <div style={{ fontSize: '13px', color: '#78350f', lineHeight: '1.8' }}>
+              <div style={{ marginBottom: '8px' }}>
+                <strong>Step 1.</strong> 코인 심볼 입력 & 시간대 선택 → <strong style={{ color: '#f7931a' }}>패턴 분석</strong> 클릭
+              </div>
+              <div style={{ marginBottom: '8px' }}>
+                <strong>Step 2.</strong> 아래 <strong style={{ color: '#8b5cf6' }}>AI 이미지 분석</strong>에서 차트 스크린샷 업로드
+              </div>
+              <div style={{ marginBottom: '8px' }}>
+                <strong>Step 3.</strong> <strong style={{ color: '#8b5cf6' }}>AI 이미지 분석 & 글쓰기</strong> 버튼 클릭
+              </div>
+              <div>
+                <strong>Step 4.</strong> 결과에서 <strong style={{ color: '#10b981' }}>복사할 글</strong>만 복사 → SNS 붙여넣기 완료!
+              </div>
+            </div>
+          </div>
+
+          {/* 코인 & 시간대 선택 + 패턴 분석 */}
+          <div style={{ marginBottom: '16px', padding: '16px', backgroundColor: '#fff', borderRadius: '12px', border: '1px solid #fcd34d' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '12px', alignItems: 'end' }}>
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: '600', color: '#92400e', marginBottom: '6px', display: 'block' }}>
+                  코인 심볼
+                </label>
+                <input
+                  type="text"
+                  placeholder="BTC"
+                  value={cryptoSymbol}
+                  onChange={(e) => setCryptoSymbol(e.target.value.toUpperCase())}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    border: '2px solid #f7931a',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    backgroundColor: '#fffbeb',
+                    outline: 'none',
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: '600', color: '#92400e', marginBottom: '6px', display: 'block' }}>
+                  분석 시간대
+                </label>
+                <select
+                  value={cryptoTimeframe}
+                  onChange={(e) => setCryptoTimeframe(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    border: '2px solid #f7931a',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    backgroundColor: '#fffbeb',
+                    outline: 'none',
+                    cursor: 'pointer',
+                    boxSizing: 'border-box'
+                  }}
+                >
+                  <option value="1H">1시간</option>
+                  <option value="4H">4시간</option>
+                  <option value="1D">1일</option>
+                  <option value="1W">1주</option>
+                </select>
+              </div>
+              <button
+                onClick={runPatternAnalysis}
+                disabled={isAnalyzingPattern}
+                style={{
+                  padding: '10px 20px',
+                  background: isAnalyzingPattern ? '#9ca3af' : 'linear-gradient(135deg, #f7931a, #d97706)',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: isAnalyzingPattern ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                {isAnalyzingPattern ? (
+                  <>
+                    <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} />
+                    분석중...
+                  </>
+                ) : (
+                  <>
+                    <TrendingUp size={16} />
+                    패턴 분석
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* 패턴 분석 결과 표시 */}
+            {patternAnalysisResult && (
+              <div style={{
+                marginTop: '16px',
+                padding: '12px',
+                backgroundColor: patternAnalysisResult.error ? '#fef2f2' : '#f0fdf4',
+                borderRadius: '8px',
+                border: `1px solid ${patternAnalysisResult.error ? '#fecaca' : '#bbf7d0'}`
+              }}>
+                {patternAnalysisResult.error ? (
+                  <p style={{ color: '#dc2626', fontSize: '13px', margin: 0 }}>
+                    {patternAnalysisResult.error}
+                  </p>
+                ) : (
+                  <div style={{ fontSize: '13px', color: '#166534' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <strong>{patternAnalysisResult.symbol} {getTimeframeLabel(patternAnalysisResult.timeframe)}봉</strong>
+                      <span style={{
+                        padding: '4px 12px',
+                        borderRadius: '20px',
+                        fontSize: '12px',
+                        fontWeight: '700',
+                        backgroundColor: patternAnalysisResult.prediction === '상승' ? '#22c55e' :
+                                        patternAnalysisResult.prediction === '하락' ? '#ef4444' : '#9ca3af',
+                        color: '#fff'
+                      }}>
+                        {patternAnalysisResult.prediction === '상승' ? '📈' : patternAnalysisResult.prediction === '하락' ? '📉' : '➡️'} {patternAnalysisResult.prediction}
+                      </span>
+                    </div>
+                    <p style={{ margin: '4px 0', color: '#374151' }}>
+                      💰 현재가: <strong>${patternAnalysisResult.currentPrice?.toLocaleString()}</strong>
+                    </p>
+                    <p style={{ margin: '4px 0', color: '#374151' }}>
+                      📊 유사패턴: {patternAnalysisResult.stats.count}건 / 10봉후 상승확률: <strong>{patternAnalysisResult.stats.upProb10}%</strong>
+                    </p>
+                    <p style={{ margin: '4px 0', color: '#374151' }}>
+                      📈 평균 변화: {patternAnalysisResult.stats.avgChange10 > 0 ? '+' : ''}{patternAnalysisResult.stats.avgChange10}% |
+                      최대상승 +{patternAnalysisResult.stats.avgMaxUp}% / 최대하락 {patternAnalysisResult.stats.avgMaxDown}%
+                    </p>
+                    <p style={{ margin: '8px 0 0 0', fontSize: '11px', color: '#6b7280' }}>
+                      신뢰도: {patternAnalysisResult.confidence} · 분석 결과가 AI 글 생성에 자동 반영됩니다
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* 기준 스타일 텍스트 */}
+          <div style={{ marginBottom: '16px' }}>
+            <label style={{ fontSize: '12px', fontWeight: '600', color: '#92400e', marginBottom: '6px', display: 'block' }}>
+              기준 글쓰기 스타일 (선택)
+            </label>
+            <p style={{ fontSize: '11px', color: '#6b7280', marginBottom: '8px' }}>
+              이 스타일을 참고해서 비슷한 톤으로 글을 작성합니다
+            </p>
+            <textarea
+              placeholder={`[BTC 1시간 캔들 차트]
+
+중요했던 200선(흰색) 이탈되었습니다.
+
+기존에 핸들 만들어가는 과정에서의 이탈이기에 아쉽다고 느끼실만 하지만 왠지모를 위화감이 드는 하락이었습니다.
+
+바닥($89,300) 잡고 롱포지션 유효하겠습니다.`}
+              value={referenceText}
+              onChange={(e) => setReferenceText(e.target.value)}
+              style={{
+                width: '100%',
+                height: '150px',
+                padding: '12px',
+                border: '2px solid #fcd34d',
+                borderRadius: '8px',
+                fontSize: '13px',
+                lineHeight: '1.6',
+                resize: 'vertical',
+                backgroundColor: '#fff',
+                outline: 'none',
+                boxSizing: 'border-box'
+              }}
+            />
+          </div>
+
+          {/* 레퍼럴 & 텔레그램 */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div>
+              <label style={{ fontSize: '12px', fontWeight: '600', color: '#f7931a', marginBottom: '6px', display: 'block' }}>
+                레퍼럴 코드 (선택)
+              </label>
+              <input
+                type="text"
+                placeholder="예: ABC123"
+                value={referralCode}
+                onChange={(e) => setReferralCode(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  border: '2px solid #fcd34d',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  backgroundColor: '#fff',
+                  outline: 'none',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: '12px', fontWeight: '600', color: '#0088cc', marginBottom: '6px', display: 'block' }}>
+                텔레그램 주소 (선택)
+              </label>
+              <input
+                type="text"
+                placeholder="예: https://t.me/yourchannel"
+                value={telegramUrl}
+                onChange={(e) => setTelegramUrl(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  border: '2px solid #0088cc',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  backgroundColor: '#f0f9ff',
+                  outline: 'none',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 6. AI 이미지 분석 (Pro 전용) */}
       <div style={{
         ...cardStyle,
@@ -1782,78 +2673,6 @@ ${useTrendAnalysis ? '\n트렌드를 반영한 해시태그와 표현을 적극 
             )}
           </div>
 
-          {/* 기준 사진 업로드 */}
-          <div style={{
-            padding: '16px',
-            backgroundColor: '#fff',
-            borderRadius: '12px',
-            border: '2px dashed #f59e0b'
-          }}>
-            <label style={{ fontSize: '13px', fontWeight: '600', color: '#d97706', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Eye size={16} />
-              기준 사진 (선택)
-            </label>
-            <p style={{ fontSize: '11px', color: '#6b7280', marginBottom: '8px' }}>
-              이 스타일을 참고해서 글을 작성해요
-            </p>
-            {referenceImagePreview ? (
-              <div style={{ position: 'relative' }}>
-                <img
-                  src={referenceImagePreview}
-                  alt="기준 사진"
-                  style={{
-                    width: '100%',
-                    height: '120px',
-                    objectFit: 'cover',
-                    borderRadius: '8px',
-                    marginBottom: '8px'
-                  }}
-                />
-                <button
-                  onClick={removeReferenceImage}
-                  style={{
-                    position: 'absolute',
-                    top: '8px',
-                    right: '8px',
-                    backgroundColor: '#ef4444',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: '50%',
-                    width: '28px',
-                    height: '28px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                  }}
-                >
-                  <X size={16} />
-                </button>
-              </div>
-            ) : (
-              <label style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                height: '120px',
-                backgroundColor: '#fffbeb',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                transition: 'background-color 0.2s'
-              }}>
-                <Eye size={28} color="#f59e0b" />
-                <span style={{ color: '#6b7280', fontSize: '12px', marginTop: '6px' }}>스타일 참고용</span>
-                <input
-                  ref={referenceImageRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handleReferenceImageUpload}
-                  style={{ display: 'none' }}
-                />
-              </label>
-            )}
-          </div>
         </div>
 
         {/* 이미지 분석 버튼 */}
@@ -1885,7 +2704,7 @@ ${useTrendAnalysis ? '\n트렌드를 반영한 해시태그와 표현을 적극 
           ) : (
             <>
               <Sparkles size={18} />
-              {referenceImage ? 'AI 비교 분석 & 글쓰기' : 'AI 이미지 분석 & 글쓰기'}
+              {referenceText || referenceImage ? 'AI 비교 분석 & 글쓰기' : 'AI 이미지 분석 & 글쓰기'}
             </>
           )}
         </button>
@@ -1899,14 +2718,70 @@ ${useTrendAnalysis ? '\n트렌드를 반영한 해시태그와 표현을 적극 
             borderRadius: '10px',
             border: '1px solid #8b5cf6'
           }}>
+            {/* 복사할 글 (crypto 모드) - 맨 상단에 표시 */}
+            {contentType === 'crypto' && (
+              <div style={{
+                marginBottom: '20px',
+                padding: '20px',
+                backgroundColor: '#f0fdf4',
+                borderRadius: '12px',
+                border: '2px solid #22c55e'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <label style={{ fontWeight: '700', color: '#16a34a', fontSize: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    📋 복사할 글 (이것만 복사하세요!)
+                  </label>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(extractSNSContent(imageAnalysisResult));
+                      alert('SNS 글이 복사되었습니다!');
+                    }}
+                    style={{
+                      padding: '10px 20px',
+                      background: 'linear-gradient(135deg, #22c55e, #16a34a)',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      boxShadow: '0 2px 8px rgba(34, 197, 94, 0.3)'
+                    }}
+                  >
+                    <Copy size={16} />
+                    글 복사하기
+                  </button>
+                </div>
+                <div style={{
+                  whiteSpace: 'pre-wrap',
+                  fontSize: '14px',
+                  lineHeight: '1.8',
+                  color: '#166534',
+                  backgroundColor: '#fff',
+                  padding: '16px',
+                  borderRadius: '8px',
+                  border: '1px solid #bbf7d0',
+                  maxHeight: '300px',
+                  overflowY: 'auto'
+                }}>
+                  {extractSNSContent(imageAnalysisResult)}
+                </div>
+              </div>
+            )}
+
+            {/* 전체 분석 결과 (접기/펼치기) */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
               <label style={{ fontWeight: '600', color: '#7c3aed', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <Sparkles size={16} />
-                AI 분석 결과
+                {contentType === 'crypto' ? '전체 분석 결과 (참고용)' : 'AI 분석 결과'}
               </label>
               <button
                 onClick={() => {
-                  navigator.clipboard.writeText(imageAnalysisResult);
+                  const fullContent = imageAnalysisResult + (contentType === 'crypto' && patternAnalysisResult && !patternAnalysisResult.error ? formatPatternResult() : '');
+                  navigator.clipboard.writeText(fullContent);
                   alert('복사되었습니다!');
                 }}
                 style={{
@@ -1923,7 +2798,7 @@ ${useTrendAnalysis ? '\n트렌드를 반영한 해시태그와 표현을 적극 
                 }}
               >
                 <Copy size={14} />
-                복사
+                전체 복사
               </button>
             </div>
             <div style={{
@@ -1931,11 +2806,362 @@ ${useTrendAnalysis ? '\n트렌드를 반영한 해시태그와 표현을 적극 
               fontSize: '14px',
               lineHeight: '1.7',
               color: '#374151',
-              maxHeight: '400px',
-              overflowY: 'auto'
+              maxHeight: contentType === 'crypto' ? '200px' : '400px',
+              overflowY: 'auto',
+              backgroundColor: contentType === 'crypto' ? '#f9fafb' : 'transparent',
+              padding: contentType === 'crypto' ? '12px' : '0',
+              borderRadius: '8px'
             }}>
               {imageAnalysisResult}
+              {/* 패턴 분석 결과가 있으면 추가 표시 */}
+              {contentType === 'crypto' && patternAnalysisResult && !patternAnalysisResult.error && (
+                <div style={{
+                  marginTop: '16px',
+                  padding: '12px',
+                  backgroundColor: '#fef3c7',
+                  borderRadius: '8px',
+                  border: '1px solid #f59e0b'
+                }}>
+                  {formatPatternResult()}
+                </div>
+              )}
             </div>
+
+            {/* 이미지로 저장 버튼 */}
+            {contentType === 'crypto' && productImagePreview && (
+              <button
+                onClick={() => setShowCardPreview(!showCardPreview)}
+                style={{
+                  marginTop: '16px',
+                  padding: '12px 20px',
+                  background: showCardPreview ? '#6b7280' : 'linear-gradient(135deg, #f7931a, #ff6b00)',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                <Image size={18} />
+                {showCardPreview ? '카드 미리보기 닫기' : '이미지 카드로 만들기'}
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* 텔레그램 스타일 카드 미리보기 */}
+        {showCardPreview && imageAnalysisResult && contentType === 'crypto' && (
+          <div style={{ marginTop: '20px' }}>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '12px'
+            }}>
+              <label style={{ fontWeight: '600', color: '#f7931a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <TrendingUp size={16} />
+                이미지 카드 미리보기
+              </label>
+              <button
+                onClick={downloadCardAsImage}
+                disabled={isDownloading}
+                style={{
+                  padding: '10px 20px',
+                  background: isDownloading ? '#9ca3af' : 'linear-gradient(135deg, #10b981, #059669)',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: isDownloading ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                {isDownloading ? (
+                  <>
+                    <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} />
+                    다운로드 중...
+                  </>
+                ) : (
+                  <>
+                    <Download size={16} />
+                    이미지 다운로드
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* 텔레그램 스타일 카드 */}
+            <div
+              ref={cardPreviewRef}
+              style={{
+                width: '100%',
+                maxWidth: '500px',
+                backgroundColor: '#1a1a2e',
+                borderRadius: '16px',
+                overflow: 'hidden',
+                fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+              }}
+            >
+              {/* 차트 이미지 + 분석 오버레이 */}
+              <div style={{ position: 'relative' }}>
+                <img
+                  src={productImagePreview}
+                  alt="차트"
+                  style={{
+                    width: '100%',
+                    height: 'auto',
+                    display: 'block'
+                  }}
+                />
+                {/* 상단 코인명 오버레이 */}
+                <div style={{
+                  position: 'absolute',
+                  top: '12px',
+                  left: '12px',
+                  backgroundColor: 'rgba(0,0,0,0.7)',
+                  padding: '6px 12px',
+                  borderRadius: '8px',
+                  color: '#fff',
+                  fontSize: '12px',
+                  fontWeight: '600'
+                }}>
+                  {productName || 'BTC/USDT'} · 차트 분석
+                </div>
+
+                {/* 방향 화살표 오버레이 */}
+                {(() => {
+                  const chartAnalysis = extractChartAnalysis(imageAnalysisResult);
+                  if (!chartAnalysis) return null;
+
+                  return (
+                    <>
+                      {/* 방향 표시 (우측 상단) */}
+                      <div style={{
+                        position: 'absolute',
+                        top: '12px',
+                        right: '12px',
+                        backgroundColor: chartAnalysis.direction === 'up' ? 'rgba(34, 197, 94, 0.9)' :
+                                        chartAnalysis.direction === 'down' ? 'rgba(239, 68, 68, 0.9)' :
+                                        'rgba(156, 163, 175, 0.9)',
+                        padding: '8px 14px',
+                        borderRadius: '8px',
+                        color: '#fff',
+                        fontSize: '14px',
+                        fontWeight: '700',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+                      }}>
+                        {chartAnalysis.direction === 'up' ? '📈 상승' :
+                         chartAnalysis.direction === 'down' ? '📉 하락' : '➡️ 횡보'}
+                      </div>
+
+                      {/* 저항선 표시 (상단) */}
+                      {chartAnalysis.resistance.length > 0 && (
+                        <div style={{
+                          position: 'absolute',
+                          top: '20%',
+                          left: '0',
+                          right: '0',
+                          borderTop: '2px dashed #ef4444',
+                          opacity: 0.8
+                        }}>
+                          <span style={{
+                            position: 'absolute',
+                            right: '8px',
+                            top: '-10px',
+                            backgroundColor: '#ef4444',
+                            color: '#fff',
+                            padding: '2px 8px',
+                            borderRadius: '4px',
+                            fontSize: '11px',
+                            fontWeight: '600'
+                          }}>
+                            저항 ${Number(chartAnalysis.resistance[0]).toLocaleString()}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* 지지선 표시 (하단) */}
+                      {chartAnalysis.support.length > 0 && (
+                        <div style={{
+                          position: 'absolute',
+                          bottom: '20%',
+                          left: '0',
+                          right: '0',
+                          borderTop: '2px dashed #22c55e',
+                          opacity: 0.8
+                        }}>
+                          <span style={{
+                            position: 'absolute',
+                            right: '8px',
+                            top: '-10px',
+                            backgroundColor: '#22c55e',
+                            color: '#fff',
+                            padding: '2px 8px',
+                            borderRadius: '4px',
+                            fontSize: '11px',
+                            fontWeight: '600'
+                          }}>
+                            지지 ${Number(chartAnalysis.support[0]).toLocaleString()}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* 예상 방향 화살표 (중앙) */}
+                      <div style={{
+                        position: 'absolute',
+                        top: '50%',
+                        right: '15%',
+                        transform: 'translateY(-50%)',
+                        fontSize: '48px',
+                        opacity: 0.7,
+                        textShadow: '0 2px 10px rgba(0,0,0,0.5)'
+                      }}>
+                        {chartAnalysis.direction === 'up' ? '⬆️' :
+                         chartAnalysis.direction === 'down' ? '⬇️' : '↔️'}
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+
+              {/* 분석 텍스트 */}
+              <div style={{
+                padding: '20px',
+                color: '#e5e7eb',
+                fontSize: '14px',
+                lineHeight: '1.8'
+              }}>
+                <div style={{
+                  whiteSpace: 'pre-wrap'
+                }}>
+                  {extractSNSContent(imageAnalysisResult)}
+                </div>
+
+                {/* 하단 정보 */}
+                <div style={{
+                  marginTop: '16px',
+                  paddingTop: '12px',
+                  borderTop: '1px solid #374151',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  color: '#9ca3af',
+                  fontSize: '12px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span style={{ color: '#ef4444' }}>❤️</span>
+                    <span>{Math.floor(Math.random() * 500) + 100}</span>
+                  </div>
+                  <div>
+                    {new Date().toLocaleString('ko-KR', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      hour12: true
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* 주의 문구 */}
+              <div style={{
+                padding: '12px 20px',
+                backgroundColor: '#2d2d44',
+                color: '#f59e0b',
+                fontSize: '11px',
+                textAlign: 'center'
+              }}>
+                ⚠️ 본 분석은 개인적인 의견이며 투자 권유가 아닙니다
+              </div>
+            </div>
+
+            {/* 레퍼럴 & 텔레그램 정보 (이미지에 포함 안됨 - 나만 보기) */}
+            {(referralCode || telegramUrl) && (
+              <div style={{
+                marginTop: '12px',
+                padding: '16px',
+                backgroundColor: '#fff',
+                borderRadius: '12px',
+                border: '2px dashed #e5e7eb'
+              }}>
+                <div style={{
+                  fontSize: '11px',
+                  color: '#9ca3af',
+                  marginBottom: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}>
+                  🔒 나만 보기 (이미지에 포함되지 않음)
+                </div>
+                {referralCode && (
+                  <div style={{
+                    color: '#f7931a',
+                    fontSize: '13px',
+                    marginBottom: telegramUrl ? '8px' : '0',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}>
+                    🎁 레퍼럴 코드: <span style={{ fontWeight: '600' }}>{referralCode}</span>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(referralCode);
+                        alert('레퍼럴 코드가 복사되었습니다!');
+                      }}
+                      style={{
+                        padding: '4px 8px',
+                        backgroundColor: '#fef3c7',
+                        border: '1px solid #f7931a',
+                        borderRadius: '4px',
+                        fontSize: '11px',
+                        cursor: 'pointer',
+                        marginLeft: '8px'
+                      }}
+                    >
+                      복사
+                    </button>
+                  </div>
+                )}
+                {telegramUrl && (
+                  <div style={{
+                    color: '#0088cc',
+                    fontSize: '13px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}>
+                    📱 텔레그램: <span style={{ fontWeight: '600' }}>{telegramUrl}</span>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(telegramUrl);
+                        alert('텔레그램 주소가 복사되었습니다!');
+                      }}
+                      style={{
+                        padding: '4px 8px',
+                        backgroundColor: '#e0f2fe',
+                        border: '1px solid #0088cc',
+                        borderRadius: '4px',
+                        fontSize: '11px',
+                        cursor: 'pointer',
+                        marginLeft: '8px'
+                      }}
+                    >
+                      복사
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
