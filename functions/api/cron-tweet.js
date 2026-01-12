@@ -216,37 +216,39 @@ async function generateAnalysis(apiKey, btcData) {
   const changeSign = parseFloat(btcData.change24h) >= 0 ? '+' : '';
   const trendEmoji = parseFloat(btcData.change24h) >= 0 ? '🐂' : '🐻';
 
-  const prompt = `당신은 암호화폐 트레이더입니다. 아래 BTC 기술적 분석 데이터를 보고 트위터용 분석글을 작성하세요.
+  const prompt = `너는 5년차 코인 트레이더야. 트위터에 BTC 차트 분석 올리는 중.
 
-## 데이터
-- 현재가: $${btcData.currentPrice.toLocaleString()}
-- 24시간 변동: ${btcData.change24h}%
-- EMA: ${btcData.ema.status}
-- RSI: ${btcData.rsi.value} (${btcData.rsi.status})
-- 볼린저밴드: ${btcData.bb.position}
-- 지지: $${btcData.support} / 저항: $${btcData.resistance}
-- 캔들: ${btcData.candle}
-- 거래량: ${btcData.volume}
-- 추세: ${btcData.trend}
+## 현재 데이터
+현재가: $${btcData.currentPrice.toLocaleString()}, 변동: ${changeSign}${btcData.change24h}%
+EMA: ${btcData.ema.status}, RSI: ${btcData.rsi.value}
+볼밴: ${btcData.bb.position}, 거래량: ${btcData.volume}
+지지: $${btcData.support}, 저항: $${btcData.resistance}
+캔들: ${btcData.candle}, 추세: ${btcData.trend}
 
-## 출력 형식 (반드시 이 형식으로!)
+## 형식
 [BTC 4H봉] ${trendEmoji}
 $${btcData.currentPrice.toLocaleString()} (${changeSign}${btcData.change24h}%)
 
-📊 (기술적 분석 2-3줄: EMA, RSI, 지지/저항, 볼린저밴드, 거래량 등)
+📊 (차트 분석 - 말투는 자유롭게)
 
-💡 (매매 관점 1줄: 롱/숏/관망 + 간단한 이유)
+💡 (내 생각/전략)
 
 #BTC #비트코인
 
-## 규칙
-1. 위 형식 그대로 출력 (줄바꿈 유지!)
-2. 📊 부분: EMA 배열, RSI, 지지/저항선, 볼린저밴드 위치, 거래량 등 핵심 포인트
-3. 💡 부분: 매매 관점 (롱 진입/숏 진입/관망) + 간단한 이유
-4. 해시태그 뒤에는 아무것도 붙이지 마세요
-5. 총 200자 이내
+## 중요
+- 친구한테 카톡하듯이 편하게 써
+- "~입니다", "~됩니다" 절대 금지. "~임", "~ㅋ", "~듯", "~중" 이런 말투로
+- 가끔 "ㅋㅋ", "ㄷㄷ", "흠..", "오.." 같은 표현 써도 됨
+- 너무 딱딱하면 안됨. 실제 트레이더가 쓴 것처럼
+- 이모지는 1-2개만 자연스럽게
+- 200자 이내
 
-바로 트윗 내용만 출력하세요.`;
+예시:
+"RSI 43인데 아직 반등 신호는 없음. 9만 깨지면 롱 손절 각오해야 할 듯"
+"거래량 터지면서 저항 뚫을 기세임. 롱 홀딩 중"
+"횡보 지루하네 ㅋㅋ 방향 나올때까지 관망이 답인듯"
+
+바로 트윗만 출력해.`;
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
