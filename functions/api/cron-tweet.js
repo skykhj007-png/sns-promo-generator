@@ -213,12 +213,15 @@ function calculateBollingerBands(data, period) {
 
 // OpenAI로 분석 글 생성
 async function generateAnalysis(apiKey, btcData) {
-  const prompt = `당신은 암호화폐 트레이더입니다. 아래 BTC 기술적 분석 데이터를 보고 트위터용 짧은 분석글을 작성하세요.
+  const changeSign = parseFloat(btcData.change24h) >= 0 ? '+' : '';
+  const trendEmoji = parseFloat(btcData.change24h) >= 0 ? '🐂' : '🐻';
+
+  const prompt = `당신은 암호화폐 트레이더입니다. 아래 BTC 기술적 분석 데이터를 보고 트위터용 분석글을 작성하세요.
 
 ## 데이터
 - 현재가: $${btcData.currentPrice.toLocaleString()}
 - 24시간 변동: ${btcData.change24h}%
-- EMA: ${btcData.ema.status} (EMA7: ${btcData.ema.ema7}, EMA25: ${btcData.ema.ema25})
+- EMA: ${btcData.ema.status}
 - RSI: ${btcData.rsi.value} (${btcData.rsi.status})
 - 볼린저밴드: ${btcData.bb.position}
 - 지지: $${btcData.support} / 저항: $${btcData.resistance}
@@ -226,13 +229,22 @@ async function generateAnalysis(apiKey, btcData) {
 - 거래량: ${btcData.volume}
 - 추세: ${btcData.trend}
 
+## 출력 형식 (반드시 이 형식으로!)
+[BTC 4H봉] ${trendEmoji}
+$${btcData.currentPrice.toLocaleString()} (${changeSign}${btcData.change24h}%)
+
+📊 (기술적 분석 2-3줄: EMA, RSI, 지지/저항, 볼린저밴드, 거래량 등)
+
+💡 (매매 관점 1줄: 롱/숏/관망 + 간단한 이유)
+
+#BTC #비트코인
+
 ## 규칙
-1. 200자 이내로 작성 (링크/해시태그 제외)
-2. 첫 줄: [BTC 4H봉] + 이모지 + 현재가, 변동률
-3. 핵심 기술적 분석 포인트 2-3개
-4. 매매 관점 (롱/숏/관망) 간단히
-5. 마지막에 #BTC #비트코인 해시태그
-6. 이모지 적절히 사용
+1. 위 형식 그대로 출력 (줄바꿈 유지!)
+2. 📊 부분: EMA 배열, RSI, 지지/저항선, 볼린저밴드 위치, 거래량 등 핵심 포인트
+3. 💡 부분: 매매 관점 (롱 진입/숏 진입/관망) + 간단한 이유
+4. 해시태그 뒤에는 아무것도 붙이지 마세요
+5. 총 200자 이내
 
 바로 트윗 내용만 출력하세요.`;
 
