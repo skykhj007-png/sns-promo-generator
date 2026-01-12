@@ -1,4 +1,4 @@
-name: Auto BTC Tweet
+name: Auto BTC Post (Twitter + Threads)
 
 on:
   schedule:
@@ -8,11 +8,12 @@ on:
   workflow_dispatch: # 수동 실행 가능
 
 jobs:
-  tweet:
+  post:
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger Cron Tweet API
+      - name: Post to Twitter
         run: |
+          echo "=== Posting to Twitter ==="
           response=$(curl -s -w "\n%{http_code}" \
             "${{ secrets.CRON_TWEET_URL }}?secret=${{ secrets.CRON_SECRET }}")
 
@@ -23,8 +24,31 @@ jobs:
           echo "HTTP Code: $http_code"
 
           if [ "$http_code" != "200" ]; then
-            echo "Failed with HTTP $http_code"
-            exit 1
+            echo "Twitter posting failed with HTTP $http_code"
+          else
+            echo "Twitter posted successfully!"
           fi
 
-          echo "Tweet posted successfully!"
+      - name: Wait before Threads
+        run: sleep 10
+
+      - name: Post to Threads
+        run: |
+          echo "=== Posting to Threads ==="
+          response=$(curl -s -w "\n%{http_code}" \
+            "${{ secrets.CRON_THREADS_URL }}?secret=${{ secrets.CRON_SECRET }}")
+
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+
+          echo "Response: $body"
+          echo "HTTP Code: $http_code"
+
+          if [ "$http_code" != "200" ]; then
+            echo "Threads posting failed with HTTP $http_code"
+          else
+            echo "Threads posted successfully!"
+          fi
+
+      - name: Summary
+        run: echo "Auto posting completed for Twitter and Threads!"
