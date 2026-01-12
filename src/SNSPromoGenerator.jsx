@@ -52,6 +52,11 @@ const SNSPromoGenerator = () => {
   const [generatedContent, setGeneratedContent] = useState('');
   const [contentCopySuccess, setContentCopySuccess] = useState(false);
 
+  // Twitter 자동 게시 관련 상태
+  const [isPostingToTwitter, setIsPostingToTwitter] = useState(false);
+  const [twitterPostSuccess, setTwitterPostSuccess] = useState(false);
+  const [twitterPostError, setTwitterPostError] = useState('');
+
   // 이미지 분석 관련 상태
   const [productImage, setProductImage] = useState(null); // 제품 사진 (base64)
   const [productImagePreview, setProductImagePreview] = useState(''); // 미리보기 URL
@@ -898,6 +903,60 @@ ${productName ? `제품명: ${productName}` : ''}`;
     navigator.clipboard.writeText(generatedContent);
     setContentCopySuccess(true);
     setTimeout(() => setContentCopySuccess(false), 2000);
+  };
+
+  // Twitter에 자동 게시하는 함수
+  const postToTwitter = async () => {
+    if (!generatedContent) {
+      alert('게시할 콘텐츠가 없습니다.');
+      return;
+    }
+
+    // 트위터/X 섹션만 추출
+    let tweetText = '';
+    const twitterMatch = generatedContent.match(/(?:트위터\/X|Twitter\/X|트위터|Twitter)[^\n]*\n([\s\S]*?)(?=\n\n(?:페이스북|Facebook|인스타그램|Instagram)|$)/i);
+
+    if (twitterMatch) {
+      tweetText = twitterMatch[1].trim();
+    } else {
+      // 트위터 섹션이 없으면 전체 내용 중 첫 280자 사용
+      tweetText = generatedContent.substring(0, 280);
+    }
+
+    // 280자 제한
+    if (tweetText.length > 280) {
+      tweetText = tweetText.substring(0, 277) + '...';
+    }
+
+    setIsPostingToTwitter(true);
+    setTwitterPostError('');
+    setTwitterPostSuccess(false);
+
+    try {
+      const response = await fetch('/api/twitter', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ text: tweetText }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || '트윗 게시 실패');
+      }
+
+      setTwitterPostSuccess(true);
+      setTimeout(() => setTwitterPostSuccess(false), 3000);
+      alert('트윗이 성공적으로 게시되었습니다! 🎉');
+    } catch (error) {
+      console.error('Twitter 게시 오류:', error);
+      setTwitterPostError(error.message);
+      alert(`트윗 게시 실패: ${error.message}`);
+    } finally {
+      setIsPostingToTwitter(false);
+    }
   };
 
   // 카드 이미지 다운로드 함수
@@ -3340,25 +3399,47 @@ ${useTrendAnalysis ? '\n트렌드를 반영한 해시태그와 표현을 적극 
               <Zap size={18} />
               AI 생성 콘텐츠 (바로 사용 가능!)
             </label>
-            <button
-              onClick={copyContentToClipboard}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '10px 20px',
-                backgroundColor: contentCopySuccess ? '#059669' : '#10b981',
-                color: '#fff',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                fontWeight: '500',
-                transition: 'all 0.2s'
-              }}
-            >
-              <Copy size={16} />
-              {contentCopySuccess ? '복사됨!' : '전체 복사'}
-            </button>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                onClick={copyContentToClipboard}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '10px 20px',
+                  backgroundColor: contentCopySuccess ? '#059669' : '#10b981',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontWeight: '500',
+                  transition: 'all 0.2s'
+                }}
+              >
+                <Copy size={16} />
+                {contentCopySuccess ? '복사됨!' : '전체 복사'}
+              </button>
+              <button
+                onClick={postToTwitter}
+                disabled={isPostingToTwitter}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '10px 20px',
+                  backgroundColor: isPostingToTwitter ? '#93c5fd' : twitterPostSuccess ? '#22c55e' : '#1DA1F2',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: isPostingToTwitter ? 'not-allowed' : 'pointer',
+                  fontWeight: '500',
+                  transition: 'all 0.2s'
+                }}
+              >
+                <Twitter size={16} />
+                {isPostingToTwitter ? '게시 중...' : twitterPostSuccess ? '게시 완료!' : 'X에 게시'}
+              </button>
+            </div>
           </div>
           <div
             style={{
@@ -3388,7 +3469,7 @@ ${useTrendAnalysis ? '\n트렌드를 반영한 해시태그와 표현을 적극 
           }}>
             <span style={{ fontSize: '18px' }}>✨</span>
             <span style={{ color: '#065f46', fontSize: '13px' }}>
-              위 콘텐츠를 복사해서 바로 SNS에 게시하세요! 플랫폼별로 구분되어 있습니다.
+              위 콘텐츠를 복사하거나 "X에 게시" 버튼으로 바로 트위터에 올리세요!
             </span>
           </div>
         </div>
