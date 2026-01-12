@@ -1,7 +1,24 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(npm run dev:*)",
+      "Bash(npm run build:*)",
+      "Bash(cat:*)",
+      "Bash(npm run deploy:*)",
+      "Bash(timeout 10 npm run dev:*)",
+      "Bash(npx wrangler:*)",
+      "Bash(grep:*)",
+      "Bash(curl:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\n암호화폐 분석 기능 대폭 업그레이드\n\n- 전문 분석 요소 추가: CME 갭, 피보나치, 청산 레벨, 펀딩비, OI, 공포탐욕지수\n- 모든 플랫폼에 전문 분석 적용 \\(쓰레드, 인스타, 트위터, 페이스북\\)\n- 텔레그램 시그널 지표 홍보 문구 추가\n- 비트겟 레퍼럴 링크 및 추천인코드 포함\n- 이미지 카드 라벨 제거 \\(메인글/댓글글 표시 삭제\\)\n- 글자수 제한 최적화 및 플랫폼별 맞춤 형식\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\n암호화폐 분석 기능 대폭 업그레이드\n\n- 전문 분석 요소 추가: CME 갭, 피보나치, 청산 레벨, 펀딩비, OI, 공포탐욕지수\n- 모든 플랫폼에 전문 분석 적용 \\(쓰레드, 인스타, 트위터, 페이스북\\)\n- 텔레그램 시그널 지표 홍보 문구 추가\n- 비트겟 레퍼럴 링크 및 추천인코드 포함\n- 이미지 카드 라벨 제거 \\(메인글/댓글글 표시 삭제\\)\n- 글자수 제한 최적화 및 플랫폼별 맞춤 형식\n- 전체 사용 가이드 추가\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(npx eslint:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(gh repo list:*)",
+      "Bash(gh auth status:*)",
+      "Bash(git remote add:*)"
     ]
   }
 }

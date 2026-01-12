@@ -1,0 +1,30 @@
+name: Auto BTC Tweet
+
+on:
+  schedule:
+    # 4시간마다 실행 (UTC 기준: 0, 4, 8, 12, 16, 20시)
+    # 한국시간: 9시, 13시, 17시, 21시, 1시, 5시
+    - cron: '0 */4 * * *'
+  workflow_dispatch: # 수동 실행 가능
+
+jobs:
+  tweet:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Cron Tweet API
+        run: |
+          response=$(curl -s -w "\n%{http_code}" \
+            "${{ secrets.CRON_TWEET_URL }}?secret=${{ secrets.CRON_SECRET }}")
+
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+
+          echo "Response: $body"
+          echo "HTTP Code: $http_code"
+
+          if [ "$http_code" != "200" ]; then
+            echo "Failed with HTTP $http_code"
+            exit 1
+          fi
+
+          echo "Tweet posted successfully!"
