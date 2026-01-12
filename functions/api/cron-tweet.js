@@ -19,8 +19,8 @@ export async function onRequestGet(context) {
     // 1. OKX API에서 BTC 데이터 가져오기
     const btcData = await fetchBTCData();
 
-    // 2. Gemini AI로 분석 글 생성
-    const analysisText = await generateAnalysis(env.GEMINI_API_KEY, btcData);
+    // 2. OpenAI로 분석 글 생성
+    const analysisText = await generateAnalysis(env.OPENAI_API_KEY, btcData);
 
     // 3. 랜덤으로 링크 선택 (텔레그램 or 비트겟)
     const promoLink = getRandomPromoLink();
@@ -211,7 +211,7 @@ function calculateBollingerBands(data, period) {
   };
 }
 
-// Gemini AI로 분석 글 생성
+// OpenAI로 분석 글 생성
 async function generateAnalysis(apiKey, btcData) {
   const prompt = `당신은 암호화폐 트레이더입니다. 아래 BTC 기술적 분석 데이터를 보고 트위터용 짧은 분석글을 작성하세요.
 
@@ -236,28 +236,27 @@ async function generateAnalysis(apiKey, btcData) {
 
 바로 트윗 내용만 출력하세요.`;
 
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 300
-        }
-      })
-    }
-  );
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.7,
+      max_tokens: 300
+    })
+  });
 
   const data = await response.json();
 
-  if (!response.ok || !data.candidates?.[0]?.content?.parts?.[0]?.text) {
-    throw new Error('Gemini API 응답 오류: ' + JSON.stringify(data));
+  if (!response.ok || !data.choices?.[0]?.message?.content) {
+    throw new Error('OpenAI API 응답 오류: ' + JSON.stringify(data));
   }
 
-  return data.candidates[0].content.parts[0].text.trim();
+  return data.choices[0].message.content.trim();
 }
 
 // 랜덤 프로모 링크 선택
