@@ -22,8 +22,11 @@ export async function onRequestGet(context) {
     // 2. OKX API에서 BTC 데이터 가져오기
     const btcData = await fetchBTCData();
 
-    // 3. OpenAI로 Threads용 콘텐츠 생성
-    const content = await generateThreadsContent(env.OPENAI_API_KEY, btcData);
+    // 3. 실시간 크립토 뉴스 가져오기
+    const news = await fetchCryptoNews();
+
+    // 4. OpenAI로 Threads용 콘텐츠 생성 (뉴스 포함)
+    const content = await generateThreadsContent(env.OPENAI_API_KEY, btcData, news);
 
     // 4. 메인 포스트 게시
     const mainPost = await postToThreads(env.THREADS_ACCESS_TOKEN, userId, content.mainPost);
@@ -70,6 +73,63 @@ export async function onRequestGet(context) {
 // 딜레이 함수
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// 실시간 크립토 뉴스 가져오기 (CoinGecko 무료 API)
+async function fetchCryptoNews() {
+  try {
+    // CryptoCompare News API (무료)
+    const response = await fetch(
+      'https://min-api.cryptocompare.com/data/v2/news/?lang=EN&categories=BTC,Bitcoin,Trading&excludeCategories=Sponsored'
+    );
+    const data = await response.json();
+
+    if (data.Data && data.Data.length > 0) {
+      // 최신 뉴스 3개 가져오기
+      const recentNews = data.Data.slice(0, 3).map(item => ({
+        title: item.title,
+        source: item.source,
+        categories: item.categories
+      }));
+      return recentNews;
+    }
+    return [];
+  } catch (error) {
+    console.error('뉴스 가져오기 실패:', error);
+    return [];
+  }
+}
+
+// 다양한 해시태그 풀
+function getHashtags() {
+  const baseTags = ['#BTC', '#비트코인', '#Bitcoin'];
+
+  const trendTags = [
+    ['#암호화폐', '#크립토', '#Crypto', '#코인'],
+    ['#차트분석', '#기술적분석', '#TechnicalAnalysis'],
+    ['#트레이딩', '#선물거래', '#마진거래', '#Trading'],
+    ['#투자', '#재테크', '#부업', '#경제적자유'],
+    ['#코인투자', '#비트코인투자', '#알트코인'],
+    ['#불장', '#상승장', '#Bull', '#BullRun'],
+    ['#매매일지', '#수익인증', '#트레이더'],
+    ['#바이낸스', '#업비트', '#비트겟', '#OKX']
+  ];
+
+  const hour = new Date().getUTCHours();
+  const dayOfWeek = new Date().getUTCDay();
+
+  // 시간과 요일에 따라 다른 태그 조합 선택
+  const index1 = hour % trendTags.length;
+  const index2 = (hour + dayOfWeek) % trendTags.length;
+  const index3 = (dayOfWeek * 2) % trendTags.length;
+
+  const selectedTrends = [
+    ...trendTags[index1].slice(0, 2),
+    ...trendTags[index2].slice(0, 2),
+    trendTags[index3][0]
+  ];
+
+  return [...baseTags, ...selectedTrends].slice(0, 8).join(' ');
 }
 
 // Threads User ID 가져오기
@@ -290,14 +350,20 @@ function calculateBollingerBands(data, period) {
   return { upper: middle + stdDev * 2, middle, lower: middle - stdDev * 2 };
 }
 
-// OpenAI로 Threads용 콘텐츠 생성
-async function generateThreadsContent(apiKey, btcData) {
+// OpenAI로 Threads용 콘텐츠 생성 (뉴스 포함)
+async function generateThreadsContent(apiKey, btcData, news = []) {
   const changeSign = parseFloat(btcData.change24h) >= 0 ? '+' : '';
   const trendEmoji = parseFloat(btcData.change24h) >= 0 ? '🟢' : '🔴';
   const tp = btcData.tradingPoints;
+  const hashtags = getHashtags();
 
-  const prompt = `너는 Threads에서 유명한 코인 트레이더야. 팔로워 3만명 있고 매일 차트 분석 올림.
-BTC 4시간봉 분석 스레드를 작성해줘.
+  // 뉴스 텍스트 구성
+  const newsText = news.length > 0
+    ? `\n## 최신 BTC 관련 뉴스\n${news.map((n, i) => `${i + 1}. ${n.title} (${n.source})`).join('\n')}`
+    : '';
+
+  const prompt = `너는 Threads에서 유명한 코인 트레이더야. 팔로워 5만명 있고 매일 차트 분석 올림.
+사람들이 스크롤 멈추고 볼 정도로 눈길 끄는 BTC 분석 스레드를 작성해줘.
 
 ## 현재 BTC 데이터
 - 현재가: $${btcData.currentPrice.toLocaleString()}
@@ -313,37 +379,39 @@ BTC 4시간봉 분석 스레드를 작성해줘.
 ## 매매 포인트
 - 롱 진입: $${tp.longEntry} / 손절: $${tp.longSL} / TP1: $${tp.longTP1} / TP2: $${tp.longTP2}
 - 숏 진입: $${tp.shortEntry} / 손절: $${tp.shortSL} / TP1: $${tp.shortTP1} / TP2: $${tp.shortTP2}
+${newsText}
 
 ## 출력 형식 (JSON)
 {
-  "mainPost": "메인 포스트 (차트 분석)",
+  "mainPost": "메인 포스트 (차트 분석 + 뉴스 언급)",
   "strategyReply": "댓글1 (매매 전략)",
   "promoReply": "댓글2 (홍보 멘트)"
 }
 
-## 메인 포스트 규칙 (500자 이내)
-- 첫줄: [BTC 4H] ${trendEmoji} $${btcData.currentPrice.toLocaleString()} (${changeSign}${btcData.change24h}%)
-- 차트 분석 상세하게: EMA 배열, RSI, 볼밴, 주요 지지/저항
-- 현재 상황 분석
-- 해시태그: #BTC #비트코인 #차트분석 #암호화폐 #트레이딩
+## 메인 포스트 규칙 (500자 이내) - 이목 끌기 중요!
+- 첫줄 훅: 강렬하게 시작 (예: "🚨 BTC 중요 구간 도달", "⚠️ 이 구간 못 뚫으면...", "🔥 드디어 움직인다")
+- 둘째줄: ${trendEmoji} $${btcData.currentPrice.toLocaleString()} (${changeSign}${btcData.change24h}%)
+- 차트 핵심 분석: EMA 배열, RSI, 볼밴, 주요 지지/저항
+- 최신 뉴스가 있으면 자연스럽게 한줄 언급 (예: "마침 ~~ 뉴스도 나왔는데")
+- 해시태그: ${hashtags}
 
 ## 댓글1 규칙 (매매 전략, 400자 이내)
-- 🎯 롱/숏 어느쪽이 유리한지
-- 진입가, 손절가, 목표가 구체적으로
-- 리스크 관리 언급
-- 전문가처럼 but 친근하게
+- 🎯 롱/숏 어느쪽이 유리한지 명확하게
+- 구체적 수치: 진입가, 손절가, 목표가
+- 리스크 비율 언급 (예: "손익비 1:2 이상 노려볼만")
+- 긴박감 있게 (예: "여기서 놓치면 추격 매수 각")
 
 ## 댓글2 규칙 (홍보, 150자 이내)
-- 실시간 차트 분석이나 시그널 얘기
-- "가입하세요" 이런 말 절대 금지
-- 자연스럽게 관심 유도만
+- 관심 유도만 자연스럽게
+- "가입하세요" 같은 직접적 권유 금지
+- 예: "실시간으로 같이 보는 중", "더 자세한 분석은 여기서"
 
 ## 말투 규칙 (매우 중요!)
-- "~입니다", "~됩니다" 금지 → "~임", "~중", "~듯", "~네"
-- 가끔 "ㅋㅋ", "ㄷㄷ", "흠", "오" 자연스럽게
-- 이모지 적당히 (2-3개)
-- 실제 트레이더가 쓴 것처럼 전문적이면서 편함
-- Threads는 트위터보다 좀 더 길게 써도 됨
+- "~입니다", "~됩니다" 금지 → "~임", "~중", "~듯", "~네", "~ㅇㅇ"
+- 가끔 "ㅋㅋ", "ㄷㄷ", "흠", "오", "와", "ㄹㅇ" 자연스럽게
+- 이모지 적당히 (3-4개)
+- 실제 트레이더가 급하게 쓴 것처럼 생동감 있게
+- 질문 던지기 (예: "여기서 롱 탈 사람?", "다들 어떻게 봐?")
 
 JSON만 출력해.`;
 
@@ -384,7 +452,7 @@ JSON만 출력해.`;
   }
 }
 
-// 랜덤 프로모 링크 선택
+// 시간 기반 순환 프로모 링크 선택 (4시간마다 다른 링크)
 function getRandomPromoLink() {
   const links = [
     {
@@ -394,7 +462,14 @@ function getRandomPromoLink() {
     {
       type: 'bitget',
       text: '👉 비트겟 https://partner.bitget.com/bg/AZ6Z8S (추천코드: 63sl3029)'
+    },
+    {
+      type: 'kakao',
+      text: '👉 카톡방 https://open.kakao.com/o/sOAEK49h'
     }
   ];
-  return links[Math.floor(Math.random() * links.length)];
+  // 현재 시간(4시간 단위)을 기준으로 순환
+  const hour = new Date().getUTCHours();
+  const index = Math.floor(hour / 4) % links.length;
+  return links[index];
 }

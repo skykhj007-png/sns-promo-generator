@@ -19,8 +19,11 @@ export async function onRequestGet(context) {
     // 1. OKX API에서 BTC 데이터 가져오기
     const btcData = await fetchBTCData();
 
-    // 2. OpenAI로 메인 분석 + 댓글 내용 생성
-    const content = await generateThreadContent(env.OPENAI_API_KEY, btcData);
+    // 2. 실시간 크립토 뉴스 가져오기
+    const news = await fetchCryptoNews();
+
+    // 3. OpenAI로 메인 분석 + 댓글 내용 생성 (뉴스 포함)
+    const content = await generateThreadContent(env.OPENAI_API_KEY, btcData, news);
 
     // 3. 메인 트윗 게시
     const mainTweet = await postToTwitter(env, content.mainTweet);
@@ -67,6 +70,58 @@ export async function onRequestGet(context) {
 // 딜레이 함수
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// 실시간 크립토 뉴스 가져오기 (CryptoCompare 무료 API)
+async function fetchCryptoNews() {
+  try {
+    const response = await fetch(
+      'https://min-api.cryptocompare.com/data/v2/news/?lang=EN&categories=BTC,Bitcoin,Trading&excludeCategories=Sponsored'
+    );
+    const data = await response.json();
+
+    if (data.Data && data.Data.length > 0) {
+      const recentNews = data.Data.slice(0, 3).map(item => ({
+        title: item.title,
+        source: item.source,
+        categories: item.categories
+      }));
+      return recentNews;
+    }
+    return [];
+  } catch (error) {
+    console.error('뉴스 가져오기 실패:', error);
+    return [];
+  }
+}
+
+// 다양한 해시태그 풀 (트위터용 - 더 짧게)
+function getHashtags() {
+  const baseTags = ['#BTC', '#비트코인'];
+
+  const trendTags = [
+    ['#암호화폐', '#Crypto'],
+    ['#차트분석', '#TA'],
+    ['#트레이딩', '#Trading'],
+    ['#코인투자', '#재테크'],
+    ['#선물거래', '#마진'],
+    ['#불장', '#Bull'],
+    ['#매매일지', '#트레이더'],
+    ['#비트겟', '#OKX']
+  ];
+
+  const hour = new Date().getUTCHours();
+  const dayOfWeek = new Date().getUTCDay();
+
+  const index1 = hour % trendTags.length;
+  const index2 = (hour + dayOfWeek) % trendTags.length;
+
+  const selectedTrends = [
+    trendTags[index1][0],
+    trendTags[index2][1] || trendTags[index2][0]
+  ];
+
+  return [...baseTags, ...selectedTrends].join(' ');
 }
 
 // OKX API에서 BTC 데이터 가져오기
@@ -222,14 +277,20 @@ function calculateBollingerBands(data, period) {
   return { upper: middle + stdDev * 2, middle, lower: middle - stdDev * 2 };
 }
 
-// OpenAI로 스레드 콘텐츠 생성
-async function generateThreadContent(apiKey, btcData) {
+// OpenAI로 스레드 콘텐츠 생성 (뉴스 포함)
+async function generateThreadContent(apiKey, btcData, news = []) {
   const changeSign = parseFloat(btcData.change24h) >= 0 ? '+' : '';
   const trendEmoji = parseFloat(btcData.change24h) >= 0 ? '🟢' : '🔴';
   const tp = btcData.tradingPoints;
+  const hashtags = getHashtags();
+
+  // 뉴스 텍스트 구성
+  const newsText = news.length > 0
+    ? `\n## 최신 BTC 관련 뉴스\n${news.map((n, i) => `${i + 1}. ${n.title} (${n.source})`).join('\n')}`
+    : '';
 
   const prompt = `너는 트위터에서 유명한 코인 트레이더야. 팔로워 5만명 있고 매일 차트 분석 올림.
-오늘도 BTC 4시간봉 분석 올리는 중. 스레드로 3개 트윗 작성해줘.
+사람들이 스크롤 멈추고 볼 정도로 눈길 끄는 BTC 분석 스레드를 작성해줘.
 
 ## 현재 BTC 데이터
 - 현재가: $${btcData.currentPrice.toLocaleString()}
@@ -245,38 +306,38 @@ async function generateThreadContent(apiKey, btcData) {
 ## 매매 포인트
 - 롱 진입: $${tp.longEntry} / 손절: $${tp.longSL} / TP1: $${tp.longTP1} / TP2: $${tp.longTP2}
 - 숏 진입: $${tp.shortEntry} / 손절: $${tp.shortSL} / TP1: $${tp.shortTP1} / TP2: $${tp.shortTP2}
+${newsText}
 
 ## 출력 형식 (JSON)
 {
-  "mainTweet": "메인 트윗 (차트 분석)",
+  "mainTweet": "메인 트윗 (차트 분석 + 뉴스)",
   "strategyReply": "댓글1 (매매 전략)",
   "promoReply": "댓글2 (홍보 멘트)"
 }
 
-## 메인 트윗 규칙 (280자 이내)
-- 첫줄: [BTC 4H] ${trendEmoji} $${btcData.currentPrice.toLocaleString()} (${changeSign}${btcData.change24h}%)
-- 차트 핵심만 짧게: EMA 배열, RSI, 주요 지지/저항
-- 현재 상황 한줄 요약
-- 해시태그: #BTC #비트코인 #차트분석 #암호화폐
+## 메인 트윗 규칙 (280자 이내) - 이목 끌기 중요!
+- 첫줄 훅: 강렬하게 시작 (예: "🚨 BTC 주목", "⚠️ 중요 구간", "🔥 움직인다")
+- 가격: ${trendEmoji} $${btcData.currentPrice.toLocaleString()} (${changeSign}${btcData.change24h}%)
+- 차트 핵심: EMA, RSI, 지지/저항 짧게
+- 뉴스 있으면 짧게 언급 (예: "~~ 뉴스 영향")
+- 해시태그: ${hashtags}
 
 ## 댓글1 규칙 (매매 전략, 280자 이내)
-- 🎯 롱/숏 어느쪽이 유리한지
-- 진입가, 손절가, 목표가 구체적으로
-- 리스크 관리 언급
-- 전문가처럼 but 친근하게
+- 🎯 롱/숏 방향 명확하게
+- 구체적 수치: 진입가, 손절가, 목표가
+- 긴박감 (예: "지금 아니면 늦음", "이 구간 놓치면 추격각")
 
 ## 댓글2 규칙 (홍보, 100자 이내)
-- 실시간 차트 분석이나 시그널 얘기
-- "가입하세요" 이런 말 절대 금지
 - 자연스럽게 관심 유도만
+- "가입하세요" 같은 직접적 권유 금지
+- 예: "실시간으로 같이 보는 중"
 
 ## 말투 규칙 (매우 중요!)
-- "~입니다", "~됩니다" 금지 → "~임", "~중", "~듯"
-- 가끔 "ㅋㅋ", "ㄷㄷ", "흠", "오" 자연스럽게
-- 이모지 과하지 않게 (1-2개)
-- 실제 트레이더가 쓴 것처럼 전문적이면서 편함
-- 예시: "RSI 과매도 근접인데 반등 나올 수도 있어서 롱 노려볼만"
-- 예시: "여기서 손절 안잡으면 물릴 수 있음 주의"
+- "~입니다", "~됩니다" 금지 → "~임", "~중", "~듯", "~ㅇㅇ"
+- 가끔 "ㅋㅋ", "ㄷㄷ", "흠", "오", "ㄹㅇ" 자연스럽게
+- 이모지 2-3개
+- 질문 던지기 (예: "여기서 롱?", "다들 어떻게 봐?")
+- 실제 트레이더처럼 급하게 쓴 느낌
 
 JSON만 출력해.`;
 
@@ -319,7 +380,7 @@ JSON만 출력해.`;
   }
 }
 
-// 랜덤 프로모 링크 선택
+// 시간 기반 순환 프로모 링크 선택 (4시간마다 다른 링크)
 function getRandomPromoLink() {
   const links = [
     {
@@ -329,9 +390,16 @@ function getRandomPromoLink() {
     {
       type: 'bitget',
       text: '👉 비트겟 https://partner.bitget.com/bg/AZ6Z8S (추천코드: 63sl3029)'
+    },
+    {
+      type: 'kakao',
+      text: '👉 카톡방 https://open.kakao.com/o/sOAEK49h'
     }
   ];
-  return links[Math.floor(Math.random() * links.length)];
+  // 현재 시간(4시간 단위)을 기준으로 순환
+  const hour = new Date().getUTCHours();
+  const index = Math.floor(hour / 4) % links.length;
+  return links[index];
 }
 
 // Twitter에 게시 (답글 지원)
