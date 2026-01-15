@@ -31,3 +31,7 @@ dist-ssr
 
 # Wrangler
 .wrangler
+
+# Claude Code temp files
+tmpclaude-*
+.claude/
