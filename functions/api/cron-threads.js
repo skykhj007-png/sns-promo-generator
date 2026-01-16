@@ -19,14 +19,21 @@ export async function onRequestGet(context) {
     // 1. Threads User ID 가져오기
     const userId = await getThreadsUserId(env.THREADS_ACCESS_TOKEN);
 
-    // 2. OKX API에서 BTC 데이터 가져오기
-    const btcData = await fetchBTCData();
+    // 2. BTC & ETH 데이터 가져오기
+    const btcData = await fetchCryptoData('BTC-USDT');
+    const ethData = await fetchCryptoData('ETH-USDT');
 
-    // 3. 실시간 크립토 뉴스 가져오기
+    // 3. 어떤 코인이 더 핫한지 판단
+    const mainCrypto = selectHotCrypto(btcData, ethData);
+
+    // 4. 시장 데이터 가져오기 (금/은, Fear&Greed, 도미넌스)
+    const marketData = await fetchMarketData();
+
+    // 5. 실시간 뉴스 가져오기
     const news = await fetchCryptoNews();
 
-    // 4. OpenAI로 Threads용 콘텐츠 생성 (뉴스 포함)
-    const content = await generateThreadsContent(env.OPENAI_API_KEY, btcData, news);
+    // 6. OpenAI로 Threads용 콘텐츠 생성
+    const content = await generateThreadsContent(env.OPENAI_API_KEY, mainCrypto, ethData, news, marketData);
 
     // 4. 메인 포스트 게시
     const mainPost = await postToThreads(env.THREADS_ACCESS_TOKEN, userId, content.mainPost);
@@ -51,7 +58,9 @@ export async function onRequestGet(context) {
         strategy: reply1.id,
         promo: reply2.id
       },
-      btcData: btcData,
+      cryptoData: mainCrypto,
+      ethData: ethData,
+      marketData: marketData,
       promoLink: promoLink.type
     }), {
       status: 200,
@@ -278,10 +287,10 @@ async function postToThreads(accessToken, userId, text, replyToId = null) {
   return publishData;
 }
 
-// OKX API에서 BTC 데이터 가져오기
-async function fetchBTCData() {
-  const symbol = 'BTC-USDT';
+// OKX API에서 암호화폐 데이터 가져오기 (BTC, ETH 등)
+async function fetchCryptoData(symbol) {
   const timeframe = '4H';
+  const coinName = symbol.split('-')[0];
 
   const candleResponse = await fetch(
     `https://www.okx.com/api/v5/market/candles?instId=${symbol}&bar=${timeframe}&limit=100`
@@ -294,7 +303,7 @@ async function fetchBTCData() {
   const tickerData = await tickerResponse.json();
 
   if (!candleData.data || !tickerData.data) {
-    throw new Error('OKX API 데이터 없음');
+    throw new Error(`OKX API 데이터 없음: ${symbol}`);
   }
 
   const candles = candleData.data.map(c => ({
@@ -314,12 +323,61 @@ async function fetchBTCData() {
   const analysis = calculateTechnicalAnalysis(candles, currentPrice);
 
   return {
-    symbol: 'BTC',
+    symbol: coinName,
     timeframe: '4H',
     currentPrice,
     change24h: changePercent,
     ...analysis
   };
+}
+
+// BTC vs ETH 중 더 핫한 코인 선택
+function selectHotCrypto(btcData, ethData) {
+  const btcChange = Math.abs(parseFloat(btcData.change24h));
+  const ethChange = Math.abs(parseFloat(ethData.change24h));
+  if (ethChange > btcChange * 2 && ethChange > 3) {
+    return ethData;
+  }
+  return btcData;
+}
+
+// 시장 데이터 가져오기 (금/은 + Fear&Greed + 경제 시황)
+async function fetchMarketData() {
+  const result = { gold: null, silver: null, fearGreed: null, dominance: null };
+
+  try {
+    const metalResponse = await fetch('https://api.metals.live/v1/spot');
+    const metalData = await metalResponse.json();
+    const gold = metalData.find(m => m.metal === 'gold');
+    const silver = metalData.find(m => m.metal === 'silver');
+    result.gold = gold ? { price: gold.price } : null;
+    result.silver = silver ? { price: silver.price } : null;
+  } catch (e) { console.error('금/은 데이터 실패:', e); }
+
+  try {
+    const fgResponse = await fetch('https://api.alternative.me/fng/?limit=1');
+    const fgData = await fgResponse.json();
+    if (fgData.data?.[0]) {
+      result.fearGreed = {
+        value: parseInt(fgData.data[0].value),
+        label: fgData.data[0].value_classification
+      };
+    }
+  } catch (e) { console.error('Fear&Greed 데이터 실패:', e); }
+
+  try {
+    const domResponse = await fetch('https://api.coingecko.com/api/v3/global');
+    const domData = await domResponse.json();
+    if (domData.data) {
+      result.dominance = {
+        btc: domData.data.market_cap_percentage?.btc?.toFixed(1),
+        eth: domData.data.market_cap_percentage?.eth?.toFixed(1),
+        totalMarketCap: (domData.data.total_market_cap?.usd / 1e12).toFixed(2)
+      };
+    }
+  } catch (e) { console.error('도미넌스 데이터 실패:', e); }
+
+  return result;
 }
 
 // 기술적 분석 계산
@@ -430,37 +488,65 @@ function calculateBollingerBands(data, period) {
   return { upper: middle + stdDev * 2, middle, lower: middle - stdDev * 2 };
 }
 
-// OpenAI로 Threads용 콘텐츠 생성 (뉴스 포함)
-async function generateThreadsContent(apiKey, btcData, news = []) {
-  const changeSign = parseFloat(btcData.change24h) >= 0 ? '+' : '';
-  const trendEmoji = parseFloat(btcData.change24h) >= 0 ? '🟢' : '🔴';
-  const tp = btcData.tradingPoints;
+// OpenAI로 Threads용 콘텐츠 생성 (뉴스, ETH, 금/은 포함)
+async function generateThreadsContent(apiKey, mainCrypto, ethData, news = [], marketData = null) {
+  const changeSign = parseFloat(mainCrypto.change24h) >= 0 ? '+' : '';
+  const trendEmoji = parseFloat(mainCrypto.change24h) >= 0 ? '🟢' : '🔴';
+  const tp = mainCrypto.tradingPoints;
   const hashtags = getHashtags();
-  const hookExample = getRandomHook(btcData);
+  const hookExample = getRandomHook(mainCrypto);
+  const isSideways = mainCrypto.trend === '횡보';
+  const isETH = mainCrypto.symbol === 'ETH';
 
-  // 뉴스 텍스트 구성 (제목 + 본문 요약 포함)
+  // 뉴스 텍스트
   const newsText = news.length > 0
-    ? `\n## 🔴 중요: 최신 BTC 뉴스 (반드시 1개 이상 핵심 내용을 언급할 것!)
-${news.map((n, i) => `
-### 뉴스 ${i + 1}: ${n.title}
-- 출처: ${n.source}
-- 내용: ${n.summary}...
-`).join('')}
-위 뉴스 중 가장 중요한 것을 골라서 구체적인 수치나 내용을 언급해줘!
-예시: "ETF로 $500M 유입됐다던데", "고래가 10,000 BTC 매집했대", "마이크로스트래티지가 또 샀네"`
-    : '\n## 뉴스 없음 - 차트 분석에만 집중';
+    ? `\n## 🔴 최신 뉴스 (핵심 내용 언급!)
+${news.map((n, i) => `### 뉴스 ${i + 1}: ${n.title}\n- 출처: ${n.source}\n- 내용: ${n.summary}...`).join('\n')}
+구체적인 수치나 내용을 언급해줘!` : '';
+
+  // ETH 정보
+  const ethText = !isETH ? `
+## 이더리움 현황
+- ETH: $${ethData.currentPrice.toLocaleString()} (${parseFloat(ethData.change24h) >= 0 ? '+' : ''}${ethData.change24h}%)
+- 추세: ${ethData.trend}` : '';
+
+  // 시장 심리 & 경제 시황
+  const fearGreedText = marketData?.fearGreed ?
+    `Fear & Greed: ${marketData.fearGreed.value} (${marketData.fearGreed.label})` : '';
+  const dominanceText = marketData?.dominance ?
+    `BTC 도미넌스: ${marketData.dominance.btc}% / 전체 시총: $${marketData.dominance.totalMarketCap}조` : '';
+  const goldText = marketData?.gold ? `금: $${marketData.gold.price?.toLocaleString()}/oz` : '';
+
+  const marketText = marketData ? `
+## 📊 시장 심리 & 경제 시황
+- ${fearGreedText}
+- ${dominanceText}
+- ${goldText}
+${marketData.fearGreed?.value <= 25 ? '→ 공포 구간! "다들 무서워할 때가 기회" 멘트 가능' : ''}
+${marketData.fearGreed?.value >= 75 ? '→ 탐욕 구간! "FOMO 조심" 멘트 가능' : ''}` : '';
+
+  // 횡보시 추가 토픽
+  const sidewaysTopics = isSideways ? `
+## 💡 횡보장이니까 다른 얘기도 섞어줘
+- 비트코인과 금의 상관관계
+- Fear & Greed 지수 언급
+- 도미넌스 변화
+- "횡보 지루하다" 공감` : '';
 
   const prompt = `너는 Threads에서 5년째 매매하는 개인 트레이더야.
 너무 전문가처럼 쓰지 말고, 그냥 매일 트레이딩하면서 느끼는 것들 툭툭 던지는 느낌으로.
 
-## 현재 BTC 상황
-- 가격: $${btcData.currentPrice.toLocaleString()} (${changeSign}${btcData.change24h}%)
-- EMA: ${btcData.ema.status}
-- RSI: ${btcData.rsi.value} (${btcData.rsi.status})
-- 볼밴: ${btcData.bb.position}
-- 지지/저항: $${btcData.support} ~ $${btcData.resistance}
-- 캔들: ${btcData.candle} / 거래량: ${btcData.volume}
-- 전체 추세: ${btcData.trend}
+## 현재 ${mainCrypto.symbol} 상황
+- 가격: $${mainCrypto.currentPrice.toLocaleString()} (${changeSign}${mainCrypto.change24h}%)
+- EMA: ${mainCrypto.ema.status}
+- RSI: ${mainCrypto.rsi.value} (${mainCrypto.rsi.status})
+- 볼밴: ${mainCrypto.bb.position}
+- 지지/저항: $${mainCrypto.support} ~ $${mainCrypto.resistance}
+- 캔들: ${mainCrypto.candle} / 거래량: ${mainCrypto.volume}
+- 전체 추세: ${mainCrypto.trend}
+${ethText}
+${marketText}
+${sidewaysTopics}
 ${newsText}
 
 ## 매매 포인트
@@ -476,27 +562,24 @@ ${newsText}
 
 ## 메인 포스트 작성법 (500자 이내)
 1. 첫줄: "${hookExample}" 이런 식으로 시작 (🚨BTC주목 같은 AI틱한거 절대 금지)
-2. 가격 정보: ${trendEmoji} $${btcData.currentPrice.toLocaleString()}
-3. 차트 분석 3-4줄 (EMA, RSI, 지지/저항)
-4. ⭐ 뉴스가 있으면 반드시 언급! (예: "아 그리고 ETF 관련 뉴스 떴던데", "고래들 움직임 기사 봤음?")
+2. 가격 정보: ${trendEmoji} $${mainCrypto.currentPrice.toLocaleString()}
+3. 차트 분석 + 시장 심리/경제 시황 자연스럽게 섞기
+4. 뉴스/금/ETH 등 관련 내용 언급
 5. 해시태그: ${hashtags}
 
 ## 매매전략 댓글 (400자 이내)
 - 🎯 이모지로 시작
 - 롱/숏 중 뭐가 나은지 + 구체적 가격
-- 손익비 언급 (예: "손익비 1:2는 나옴")
 - "지금 아니면 추격각" 같은 긴박감
 
 ## 홍보 댓글 (150자 이내)
 - "실시간으로 같이 보는 중" 처럼 자연스럽게
-- 직접적 권유 금지
 
 ## 말투 (제일 중요!!!)
 - "~입니다/됩니다" → "~임/~중/~듯/~네"
 - 자연스럽게: "ㅋㅋ", "ㄷㄷ", "흠", "오", "와", "ㄹㅇ", "아"
 - 이모지 3-4개
 - 질문: "여기서 롱?", "다들 어떻게 봄?"
-- 완벽한 문장 말고 메모하듯이
 
 JSON만 출력.`;
 
