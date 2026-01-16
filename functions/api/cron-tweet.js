@@ -81,11 +81,19 @@ async function fetchCryptoNews() {
     const data = await response.json();
 
     if (data.Data && data.Data.length > 0) {
-      const recentNews = data.Data.slice(0, 3).map(item => ({
-        title: item.title,
-        source: item.source,
-        categories: item.categories
-      }));
+      const recentNews = data.Data.slice(0, 3).map(item => {
+        // 본문에서 핵심 내용 추출 (첫 200자)
+        const bodyText = item.body || '';
+        const summary = bodyText.substring(0, 200).replace(/\s+/g, ' ').trim();
+
+        return {
+          title: item.title,
+          source: item.source,
+          categories: item.categories,
+          summary: summary, // 본문 요약 추가
+          url: item.url
+        };
+      });
       return recentNews;
     }
     return [];
@@ -93,6 +101,80 @@ async function fetchCryptoNews() {
     console.error('뉴스 가져오기 실패:', error);
     return [];
   }
+}
+
+// 다양한 첫줄 훅 (30개 이상 - AI스럽지 않게)
+function getRandomHook(btcData) {
+  const change = parseFloat(btcData.change24h);
+  const price = btcData.currentPrice.toLocaleString();
+  const trend = btcData.trend;
+  const rsi = parseFloat(btcData.rsi.value);
+
+  // 상황별 훅 모음
+  const bullishHooks = [
+    `$${price} 뚫었다`,
+    `오 이거 가는거 아님?`,
+    `슬슬 올라오네`,
+    `저항 테스트 중`,
+    `흠 분위기 괜찮은데`,
+    `ㄷㄷ 거래량 터지네`,
+    `와 진짜 간다`,
+    `롱충이들 축하해`,
+    `여기서 눌리면 줍는다`,
+    `이 구간 넘기면 날아갈듯`
+  ];
+
+  const bearishHooks = [
+    `$${price} 지지 테스트`,
+    `흠.. 좀 불안한데`,
+    `숏충이 파티인가`,
+    `지지선 깨지면 답없음`,
+    `일단 관망 중`,
+    `하락 채널 진행중`,
+    `반등 나와야 하는데`,
+    `여기서 버텨야함`,
+    `손절 타이트하게`,
+    `ㅋㅋ 또 떨어지네`
+  ];
+
+  const sidewaysHooks = [
+    `횡보 지루하다`,
+    `언제 터지냐`,
+    `방향 못 잡는 중`,
+    `눈치게임 중`,
+    `위아래 다 열려있음`,
+    `박스권 며칠째냐`,
+    `터지면 크게 갈듯`,
+    `아 답답해 ㅋㅋ`,
+    `기다리는 중`,
+    `곧 방향 나올듯`
+  ];
+
+  const rsiHooks = rsi >= 70 ? [
+    `RSI ${rsi.toFixed(0)} 과매수 주의`,
+    `좀 과열된거 아님?`,
+    `단기 조정 올수도`
+  ] : rsi <= 30 ? [
+    `RSI ${rsi.toFixed(0)} 바닥권`,
+    `ㄷㄷ 많이 빠졌네`,
+    `반등 노려볼만?`
+  ] : [];
+
+  let hooks;
+  if (trend === '상승추세' || change > 1) {
+    hooks = [...bullishHooks, ...rsiHooks];
+  } else if (trend === '하락추세' || change < -1) {
+    hooks = [...bearishHooks, ...rsiHooks];
+  } else {
+    hooks = [...sidewaysHooks, ...rsiHooks];
+  }
+
+  // 시간+분을 시드로 사용해서 더 자주 바뀌게
+  const now = new Date();
+  const seed = now.getUTCHours() * 60 + now.getUTCMinutes();
+  const index = seed % hooks.length;
+
+  return hooks[index];
 }
 
 // 다양한 해시태그 풀 (트위터용 - 더 짧게)
@@ -283,63 +365,67 @@ async function generateThreadContent(apiKey, btcData, news = []) {
   const trendEmoji = parseFloat(btcData.change24h) >= 0 ? '🟢' : '🔴';
   const tp = btcData.tradingPoints;
   const hashtags = getHashtags();
+  const hookExample = getRandomHook(btcData);
 
-  // 뉴스 텍스트 구성
+  // 뉴스 텍스트 구성 (제목 + 본문 요약 포함)
   const newsText = news.length > 0
-    ? `\n## 최신 BTC 관련 뉴스\n${news.map((n, i) => `${i + 1}. ${n.title} (${n.source})`).join('\n')}`
-    : '';
+    ? `\n## 🔴 중요: 최신 BTC 뉴스 (반드시 1개 이상 핵심 내용을 언급할 것!)
+${news.map((n, i) => `
+### 뉴스 ${i + 1}: ${n.title}
+- 출처: ${n.source}
+- 내용: ${n.summary}...
+`).join('')}
+위 뉴스 중 가장 중요한 것을 골라서 구체적인 수치나 내용을 언급해줘!
+예시: "ETF로 $500M 유입됐다던데", "고래가 10,000 BTC 매집했대", "마이크로스트래티지가 또 샀네"`
+    : '\n## 뉴스 없음 - 차트 분석에만 집중';
 
-  const prompt = `너는 트위터에서 유명한 코인 트레이더야. 팔로워 5만명 있고 매일 차트 분석 올림.
-사람들이 스크롤 멈추고 볼 정도로 눈길 끄는 BTC 분석 스레드를 작성해줘.
+  const prompt = `너는 트위터에서 5년째 매매하는 개인 트레이더야.
+너무 전문가처럼 쓰지 말고, 그냥 매일 트레이딩하면서 느끼는 것들 툭툭 던지는 느낌으로.
 
-## 현재 BTC 데이터
-- 현재가: $${btcData.currentPrice.toLocaleString()}
-- 24h 변동: ${changeSign}${btcData.change24h}%
-- EMA: ${btcData.ema.status} (7: ${btcData.ema.ema7} / 25: ${btcData.ema.ema25} / 99: ${btcData.ema.ema99})
+## 현재 BTC 상황
+- 가격: $${btcData.currentPrice.toLocaleString()} (${changeSign}${btcData.change24h}%)
+- EMA: ${btcData.ema.status}
 - RSI: ${btcData.rsi.value} (${btcData.rsi.status})
 - 볼밴: ${btcData.bb.position}
-- 지지: $${btcData.support} / 저항: $${btcData.resistance}
-- 캔들: ${btcData.candle}
-- 거래량: ${btcData.volume}
-- 추세: ${btcData.trend}
-
-## 매매 포인트
-- 롱 진입: $${tp.longEntry} / 손절: $${tp.longSL} / TP1: $${tp.longTP1} / TP2: $${tp.longTP2}
-- 숏 진입: $${tp.shortEntry} / 손절: $${tp.shortSL} / TP1: $${tp.shortTP1} / TP2: $${tp.shortTP2}
+- 지지/저항: $${btcData.support} ~ $${btcData.resistance}
+- 캔들: ${btcData.candle} / 거래량: ${btcData.volume}
+- 전체 추세: ${btcData.trend}
 ${newsText}
 
-## 출력 형식 (JSON)
+## 매매 포인트
+- 롱: $${tp.longEntry} 진입 / $${tp.longSL} 손절 / $${tp.longTP1}~$${tp.longTP2} 익절
+- 숏: $${tp.shortEntry} 진입 / $${tp.shortSL} 손절 / $${tp.shortTP1}~$${tp.shortTP2} 익절
+
+## 출력 (JSON)
 {
-  "mainTweet": "메인 트윗 (차트 분석 + 뉴스)",
-  "strategyReply": "댓글1 (매매 전략)",
-  "promoReply": "댓글2 (홍보 멘트)"
+  "mainTweet": "메인",
+  "strategyReply": "매매전략 댓글",
+  "promoReply": "홍보 댓글"
 }
 
-## 메인 트윗 규칙 (280자 이내) - 이목 끌기 중요!
-- 첫줄 훅: 강렬하게 시작 (예: "🚨 BTC 주목", "⚠️ 중요 구간", "🔥 움직인다")
-- 가격: ${trendEmoji} $${btcData.currentPrice.toLocaleString()} (${changeSign}${btcData.change24h}%)
-- 차트 핵심: EMA, RSI, 지지/저항 짧게
-- 뉴스 있으면 짧게 언급 (예: "~~ 뉴스 영향")
-- 해시태그: ${hashtags}
+## 메인 트윗 작성법 (280자 이내)
+1. 첫줄: "${hookExample}" 이런 식으로 시작 (🚨BTC주목 같은 AI틱한거 절대 금지)
+2. 가격 정보: ${trendEmoji} $${btcData.currentPrice.toLocaleString()}
+3. 차트 핵심만 2-3줄
+4. ⭐ 뉴스가 있으면 반드시 언급! (예: "ETF 승인 뉴스 영향인듯", "고래 매집 기사 떴던데")
+5. 해시태그: ${hashtags}
 
-## 댓글1 규칙 (매매 전략, 280자 이내)
-- 🎯 롱/숏 방향 명확하게
-- 구체적 수치: 진입가, 손절가, 목표가
-- 긴박감 (예: "지금 아니면 늦음", "이 구간 놓치면 추격각")
+## 매매전략 댓글 (280자 이내)
+- 🎯 이모지로 시작
+- 롱/숏 중 뭐가 나은지 + 구체적 가격
+- "지금 아니면 추격각" 같은 긴박감
 
-## 댓글2 규칙 (홍보, 100자 이내)
-- 자연스럽게 관심 유도만
-- "가입하세요" 같은 직접적 권유 금지
-- 예: "실시간으로 같이 보는 중"
+## 홍보 댓글 (100자 이내)
+- "실시간으로 같이 보는 중" 처럼 자연스럽게
 
-## 말투 규칙 (매우 중요!)
-- "~입니다", "~됩니다" 금지 → "~임", "~중", "~듯", "~ㅇㅇ"
-- 가끔 "ㅋㅋ", "ㄷㄷ", "흠", "오", "ㄹㅇ" 자연스럽게
-- 이모지 2-3개
-- 질문 던지기 (예: "여기서 롱?", "다들 어떻게 봐?")
-- 실제 트레이더처럼 급하게 쓴 느낌
+## 말투 (제일 중요!!!)
+- "~입니다/됩니다" → "~임/~중/~듯/~네"
+- 자연스럽게: "ㅋㅋ", "ㄷㄷ", "흠", "오", "ㄹㅇ", "아"
+- 이모지 2-3개만
+- 질문: "여기서 롱?", "어떻게 봄?"
+- 완벽한 문장 말고 메모하듯이
 
-JSON만 출력해.`;
+JSON만 출력.`;
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
