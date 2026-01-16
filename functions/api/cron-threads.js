@@ -346,12 +346,13 @@ async function fetchMarketData() {
   const result = { gold: null, silver: null, fearGreed: null, dominance: null };
 
   try {
-    const metalResponse = await fetch('https://api.metals.live/v1/spot');
+    const metalResponse = await fetch('https://data-asg.goldprice.org/dbXRates/USD');
     const metalData = await metalResponse.json();
-    const gold = metalData.find(m => m.metal === 'gold');
-    const silver = metalData.find(m => m.metal === 'silver');
-    result.gold = gold ? { price: gold.price } : null;
-    result.silver = silver ? { price: silver.price } : null;
+    if (metalData.items && metalData.items[0]) {
+      const item = metalData.items[0];
+      result.gold = { price: Math.round(item.xauPrice), change: item.pcXau?.toFixed(2) };
+      result.silver = { price: item.xagPrice?.toFixed(2), change: item.pcXag?.toFixed(2) };
+    }
   } catch (e) { console.error('금/은 데이터 실패:', e); }
 
   try {
