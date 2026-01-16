@@ -510,28 +510,46 @@ ${news.map((n, i) => `### 뉴스 ${i + 1}: ${n.title}\n- 출처: ${n.source}\n- 
 - ETH: $${ethData.currentPrice.toLocaleString()} (${parseFloat(ethData.change24h) >= 0 ? '+' : ''}${ethData.change24h}%)
 - 추세: ${ethData.trend}` : '';
 
-  // 시장 심리 & 경제 시황
+  // 시장 심리 & 경제 시황 (항상 포함)
   const fearGreedText = marketData?.fearGreed ?
     `Fear & Greed: ${marketData.fearGreed.value} (${marketData.fearGreed.label})` : '';
   const dominanceText = marketData?.dominance ?
-    `BTC 도미넌스: ${marketData.dominance.btc}% / 전체 시총: $${marketData.dominance.totalMarketCap}조` : '';
+    `BTC 도미넌스: ${marketData.dominance.btc}% / ETH 도미: ${marketData.dominance.eth}% / 전체 시총: $${marketData.dominance.totalMarketCap}조` : '';
   const goldText = marketData?.gold ? `금: $${marketData.gold.price?.toLocaleString()}/oz` : '';
 
+  // 시장 심리에 따른 멘트 가이드
+  let sentimentGuide = '';
+  if (marketData?.fearGreed?.value <= 25) {
+    sentimentGuide = '→ 극단적 공포! "다들 패닉인데 오히려 기회일수도" 멘트';
+  } else if (marketData?.fearGreed?.value <= 40) {
+    sentimentGuide = '→ 공포 구간. "분위기 안 좋긴 한데" 멘트';
+  } else if (marketData?.fearGreed?.value >= 75) {
+    sentimentGuide = '→ 극단적 탐욕! "FOMO 심한데 조심" 멘트';
+  } else if (marketData?.fearGreed?.value >= 60) {
+    sentimentGuide = '→ 탐욕 구간. "분위기 좋긴 한데 조심" 멘트';
+  }
+
   const marketText = marketData ? `
-## 📊 시장 심리 & 경제 시황
+## 📊 시장 심리 & 경제 시황 (반드시 1개 이상 언급!)
 - ${fearGreedText}
 - ${dominanceText}
 - ${goldText}
-${marketData.fearGreed?.value <= 25 ? '→ 공포 구간! "다들 무서워할 때가 기회" 멘트 가능' : ''}
-${marketData.fearGreed?.value >= 75 ? '→ 탐욕 구간! "FOMO 조심" 멘트 가능' : ''}` : '';
+${sentimentGuide}
 
-  // 횡보시 추가 토픽
-  const sidewaysTopics = isSideways ? `
-## 💡 횡보장이니까 다른 얘기도 섞어줘
-- 비트코인과 금의 상관관계
-- Fear & Greed 지수 언급
-- 도미넌스 변화
-- "횡보 지루하다" 공감` : '';
+💡 복합적으로 글 쓰는 예시:
+- "${mainCrypto.symbol} 차트 보면서 금 가격도 체크해봤는데..."
+- "공포지수 ${marketData.fearGreed?.value || '??'}인데 오히려 기회일수도"
+- "도미넌스 ${marketData.dominance?.btc || '??'}%라 알트는 좀..."` : '';
+
+  // 항상 포함되는 복합 콘텐츠 가이드
+  const diverseTopics = `
+## 💡 복합적인 글 작성 (차트 + 아래 중 1-2개 자연스럽게 섞기)
+- 금/은 가격 ("금은 신고가인데...", "안전자산 흐름 보니까...")
+- Fear & Greed ("공포지수 보니까...", "시장 심리가...")
+- 도미넌스 ("BTC 도미 올라가네...", "알트 힘 빠지는 중")
+- ETH 동향 ("이더는 어떤가 보니까...", "ETH도 비슷하네")
+- 거시경제 ("금리가...", "달러가...", "나스닥 보니까...")
+${isSideways ? '- 횡보 공감 ("언제 터지냐", "지루하다 ㅋㅋ")' : ''}`;
 
   const prompt = `너는 Threads에서 5년째 매매하는 개인 트레이더야.
 너무 전문가처럼 쓰지 말고, 그냥 매일 트레이딩하면서 느끼는 것들 툭툭 던지는 느낌으로.
@@ -546,7 +564,7 @@ ${marketData.fearGreed?.value >= 75 ? '→ 탐욕 구간! "FOMO 조심" 멘트 �
 - 전체 추세: ${mainCrypto.trend}
 ${ethText}
 ${marketText}
-${sidewaysTopics}
+${diverseTopics}
 ${newsText}
 
 ## 매매 포인트
