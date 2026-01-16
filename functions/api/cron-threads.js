@@ -366,16 +366,38 @@ async function fetchMarketData() {
   } catch (e) { console.error('Fear&Greed 데이터 실패:', e); }
 
   try {
-    const domResponse = await fetch('https://api.coingecko.com/api/v3/global');
-    const domData = await domResponse.json();
-    if (domData.data) {
-      result.dominance = {
-        btc: domData.data.market_cap_percentage?.btc?.toFixed(1),
-        eth: domData.data.market_cap_percentage?.eth?.toFixed(1),
-        totalMarketCap: (domData.data.total_market_cap?.usd / 1e12).toFixed(2)
-      };
+    const domResponse = await fetch('https://api.coingecko.com/api/v3/global', {
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (compatible; CryptoBot/1.0)'
+      }
+    });
+    if (domResponse.ok) {
+      const domData = await domResponse.json();
+      if (domData.data) {
+        result.dominance = {
+          btc: domData.data.market_cap_percentage?.btc?.toFixed(1),
+          eth: domData.data.market_cap_percentage?.eth?.toFixed(1),
+          totalMarketCap: (domData.data.total_market_cap?.usd / 1e12).toFixed(2)
+        };
+      }
     }
-  } catch (e) { console.error('도미넌스 데이터 실패:', e); }
+  } catch (e) { console.error('CoinGecko 도미넌스 실패:', e); }
+
+  // 백업: 도미넌스 없으면 Coinlore에서 시도
+  if (!result.dominance) {
+    try {
+      const backupResponse = await fetch('https://api.coinlore.net/api/global/');
+      const backupData = await backupResponse.json();
+      if (backupData?.[0]) {
+        result.dominance = {
+          btc: backupData[0].btc_d,
+          eth: backupData[0].eth_d,
+          totalMarketCap: (backupData[0].total_mcap / 1e12).toFixed(2)
+        };
+      }
+    } catch (e) { console.error('백업 도미넌스 실패:', e); }
+  }
 
   return result;
 }
