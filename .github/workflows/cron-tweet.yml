@@ -23,10 +23,17 @@ jobs:
           echo "Response: $body"
           echo "HTTP Code: $http_code"
 
+          # 성공 여부 확인 (HTTP 200 + JSON에 success:true 포함)
           if [ "$http_code" != "200" ]; then
-            echo "Twitter posting failed with HTTP $http_code"
-          else
+            echo "::error::Twitter posting failed with HTTP $http_code"
+            exit 1
+          fi
+
+          if echo "$body" | grep -q '"success":true'; then
             echo "Twitter posted successfully!"
+          else
+            echo "::error::Twitter API returned error: $body"
+            exit 1
           fi
 
       - name: Wait before Threads
@@ -44,10 +51,17 @@ jobs:
           echo "Response: $body"
           echo "HTTP Code: $http_code"
 
+          # 성공 여부 확인 (HTTP 200 + JSON에 success:true 포함)
           if [ "$http_code" != "200" ]; then
-            echo "Threads posting failed with HTTP $http_code"
-          else
+            echo "::error::Threads posting failed with HTTP $http_code"
+            exit 1
+          fi
+
+          if echo "$body" | grep -q '"success":true'; then
             echo "Threads posted successfully!"
+          else
+            echo "::error::Threads API returned error: $body"
+            exit 1
           fi
 
       - name: Summary
