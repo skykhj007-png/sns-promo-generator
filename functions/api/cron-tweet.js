@@ -32,22 +32,10 @@ export async function onRequestGet(context) {
     // 5. OpenAI로 콘텐츠 생성
     const content = await generateThreadContent(env.OPENAI_API_KEY, mainCrypto, ethData, news, marketData);
 
-    // 6. 차트 이미지 생성 및 업로드
-    let mediaId = null;
-    if (env.CHART_IMG_API_KEY) {
-      try {
-        const imageBuffer = await generateChartImage(env.CHART_IMG_API_KEY, mainCrypto.symbol);
-        if (imageBuffer && imageBuffer.byteLength > 0) {
-          mediaId = await uploadMediaToTwitter(env, imageBuffer);
-        }
-      } catch (chartError) {
-        console.error('Chart image error:', chartError.message);
-        // 이미지 실패해도 텍스트는 게시
-      }
-    }
-
-    // 7. 메인 트윗 게시 (이미지 포함)
-    const mainTweet = await postToTwitter(env, content.mainTweet, null, mediaId);
+    // 6. 메인 트윗 게시
+    // 참고: 차트 이미지 기능은 Twitter API 미디어 권한 문제로 비활성화
+    // Cloudflare에서 CHART_IMG_API_KEY를 삭제하면 이 코드는 무시됨
+    const mainTweet = await postToTwitter(env, content.mainTweet);
     const mainTweetId = mainTweet.data.id;
 
     // 4. 댓글 1: 매매 전략 (메인 트윗에 답글)
