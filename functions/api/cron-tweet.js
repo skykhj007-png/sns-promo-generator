@@ -32,21 +32,8 @@ export async function onRequestGet(context) {
     // 5. OpenAI로 콘텐츠 생성
     const content = await generateThreadContent(env.OPENAI_API_KEY, mainCrypto, ethData, news, marketData);
 
-    // 6. 차트 이미지 생성 (chart-img.com API)
-    let mediaId = null;
-    if (env.CHART_IMG_API_KEY) {
-      try {
-        const chartImageUrl = await generateChartImage(env.CHART_IMG_API_KEY, mainCrypto.symbol);
-        if (chartImageUrl) {
-          mediaId = await uploadMediaToTwitter(env, chartImageUrl);
-        }
-      } catch (chartError) {
-        console.error('Chart image error (continuing without image):', chartError);
-      }
-    }
-
-    // 7. 메인 트윗 게시 (이미지 포함)
-    const mainTweet = await postToTwitter(env, content.mainTweet, null, mediaId);
+    // 6. 메인 트윗 게시
+    const mainTweet = await postToTwitter(env, content.mainTweet);
     const mainTweetId = mainTweet.data.id;
 
     // 4. 댓글 1: 매매 전략 (메인 트윗에 답글)
