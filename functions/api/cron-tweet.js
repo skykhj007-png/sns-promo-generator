@@ -717,75 +717,78 @@ ${isSideways ? '- 횡보 공감 ("언제 터지냐", "지루하다 ㅋㅋ")' : '
 
   const persona = getPersona();
 
-  const prompt = `당신은 트위터에서 암호화폐 시장을 분석하는 "${persona.name}"입니다.
-작성 스타일: ${persona.style}
-이모지 사용: ${persona.emoji}개 정도만 사용
+  const prompt = `당신은 전문 암호화폐 애널리스트입니다. 깔끔하고 구조화된 시황 분석을 작성합니다.
 
-## 현재 ${mainCrypto.symbol} 상황
-- 가격: $${mainCrypto.currentPrice.toLocaleString()} (${changeSign}${mainCrypto.change24h}%)
+## 현재 ${mainCrypto.symbol} 데이터
+- 현재가: $${mainCrypto.currentPrice.toLocaleString()} (${changeSign}${mainCrypto.change24h}%)
 - EMA: ${mainCrypto.ema.status}
 - RSI: ${mainCrypto.rsi.value} (${mainCrypto.rsi.status})
-- 볼밴: ${mainCrypto.bb.position}
-- 지지/저항: $${mainCrypto.support} ~ $${mainCrypto.resistance}
-- 캔들: ${mainCrypto.candle} / 거래량: ${mainCrypto.volume}
-- 전체 추세: ${mainCrypto.trend}
+- 볼린저밴드: ${mainCrypto.bb.position}
+- 지지선: $${mainCrypto.support} / 저항선: $${mainCrypto.resistance}
+- 캔들패턴: ${mainCrypto.candle} / 거래량: ${mainCrypto.volume}
+- 전체추세: ${mainCrypto.trend}
 ${ethText}
 ${marketText}
-${diverseTopics}
 ${newsText}
 
-## 매매 포인트
-- 롱: $${tp.longEntry} 진입 / $${tp.longSL} 손절 / $${tp.longTP1}~$${tp.longTP2} 익절
-- 숏: $${tp.shortEntry} 진입 / $${tp.shortSL} 손절 / $${tp.shortTP1}~$${tp.shortTP2} 익절
+## 매매 레벨
+- 롱: 진입 $${tp.longEntry} / 손절 $${tp.longSL} / 목표 $${tp.longTP1}→$${tp.longTP2}
+- 숏: 진입 $${tp.shortEntry} / 손절 $${tp.shortSL} / 목표 $${tp.shortTP1}→$${tp.shortTP2}
 
-## 출력 (JSON)
+## 출력 형식 (JSON)
 {
-  "mainTweet": "메인",
-  "strategyReply": "매매전략 댓글",
-  "promoReply": "홍보 댓글"
+  "mainTweet": "메인 시황",
+  "strategyReply": "매매 전략",
+  "promoReply": "참여 유도"
 }
 
-## 메인 트윗 작성법 (280자 이내)
-1. 첫줄: "${hookExample}" 이런 식으로 시작 (🚨BTC주목 같은 AI틱한거 절대 금지)
-2. 가격 정보: ${trendEmoji} $${mainCrypto.currentPrice.toLocaleString()}
-3. 차트 핵심만 2-3줄
-4. 뉴스/금/은/ETH 등 관련 내용 자연스럽게 섞기
-5. 해시태그: ${hashtags}
+## 메인 트윗 작성법 (280자 이내, 분석가 스타일)
+아래 포맷을 따라 작성:
+
+📊 ${mainCrypto.symbol} 데일리 브리핑
+━━━━━━━━━━━━━━
+${trendEmoji} $XX,XXX (±X.X%)
+추세: (단기/중기 추세 한줄)
+
+🔍 핵심 레벨
+저항: $XX,XXX (설명)
+지지: $XX,XXX (설명)
+
+⚡ 시나리오
+▲ 상승: (조건과 목표가)
+▼ 하락: (조건과 목표가)
+
+${hashtags}
 
 ## 매매전략 댓글 (280자 이내)
-- 🎯 이모지로 시작
-- 롱/숏 중 어느 쪽이 유리한지 판단 + 구체적 가격 제시
-- ${persona.name} 스타일로 작성
+아래 포맷:
+
+🎯 금일 전략
+━━━━━━━━
+(현재 상황 유리한 방향 판단)
+
+📍 롱 전략
+진입: $XX,XXX
+손절: $XX,XXX
+목표: $XX,XXX → $XX,XXX
+
+📍 숏 전략
+진입: $XX,XXX
+손절: $XX,XXX
+목표: $XX,XXX → $XX,XXX
+
+⚠️ (리스크 관리 한마디)
 
 ## 홍보 댓글 (100자 이내)
-- 자연스럽게 참여 유도
-- ${persona.name} 톤 유지
+- "더 자세한 분석이 궁금하다면?" 또는 "실시간 시황은 여기서" 등
+- 자연스럽게 참여 유도 (강매 금지)
 
-## 작성 가이드 (반드시 준수!)
-${persona.tone === 'professional' ? `
-- "~입니다", "~합니다" 사용
-- 데이터와 지표 중심으로 서술
-- 이모지 최소화 (1개만)
-- 객관적이고 분석적인 표현
-예: "BTC는 $95,000 지지선을 테스트하고 있습니다. EMA 정배열이 유지되고 있으며, RSI 51.2로 중립 구간에 위치합니다."` : ''}
-${persona.tone === 'experienced' ? `
-- "~네요", "~습니다" 혼용
-- 실전 경험 기반 조언
-- 이모지 2개 정도
-- 실용적이고 현실적인 표현
-예: "$95K 지지 중이네요. EMA는 정배열 유지하고 있고, RSI 51.2로 강세권입니다. 볼밴 중심선 아래지만 추세는 긍정적입니다."` : ''}
-${persona.tone === 'research' ? `
-- "~로 나타났습니다", "~확인됩니다" 사용
-- 데이터 기반 객관적 서술
-- 이모지 1개
-- 시장 맥락 강조
-예: "BTC $95,000 구간에서 지지를 확인하고 있습니다. 기술적 지표상 EMA 정배열이 유지되며, RSI 51.2로 강세권에 진입했습니다."` : ''}
-${persona.tone === 'observer' ? `
-- "~보입니다", "~관측됩니다" 사용
-- 시장 흐름 관찰 중심
-- 이모지 2개
-- 심리적 측면 언급
-예: "$95K 지지하는 모습이 관측됩니다. EMA 정배열 유지 중이며, RSI 51.2로 강세권 진입이 보입니다. 시장 심리는 중립적입니다."` : ''}
+## 작성 규칙
+1. 숫자는 정확하게 (위 데이터 기반)
+2. 간결하고 명확하게
+3. AI틱한 표현 금지 ("🚨주목!", "긴급!" 등)
+4. 전문적이지만 읽기 쉽게
+5. 시나리오는 조건부로 작성 ("~하면 ~까지")
 
 JSON만 출력.`;
 
@@ -798,8 +801,8 @@ JSON만 출력.`;
     body: JSON.stringify({
       model: 'gpt-4o-mini',
       messages: [{ role: 'user', content: prompt }],
-      temperature: 0.8,
-      max_tokens: 800
+      temperature: 0.7,
+      max_tokens: 1200
     })
   });
 
