@@ -32,8 +32,22 @@ export async function onRequestGet(context) {
     // 5. OpenAI로 콘텐츠 생성
     const content = await generateThreadContent(env.OPENAI_API_KEY, mainCrypto, ethData, news, marketData);
 
-    // 6. 메인 트윗 게시
-    const mainTweet = await postToTwitter(env, content.mainTweet);
+    // 6. 차트 이미지 생성 및 업로드
+    let mediaId = null;
+    if (env.CHART_IMG_API_KEY) {
+      try {
+        const chartImageUrl = await generateChartImage(env.CHART_IMG_API_KEY, mainCrypto.symbol);
+        if (chartImageUrl) {
+          mediaId = await uploadMediaToTwitter(env, chartImageUrl);
+        }
+      } catch (chartError) {
+        console.error('Chart image error (continuing without image):', chartError.message);
+        // 이미지 실패해도 텍스트는 게시
+      }
+    }
+
+    // 7. 메인 트윗 게시 (이미지 포함)
+    const mainTweet = await postToTwitter(env, content.mainTweet, null, mediaId);
     const mainTweetId = mainTweet.data.id;
 
     // 4. 댓글 1: 매매 전략 (메인 트윗에 답글)
@@ -146,10 +160,11 @@ async function uploadMediaToTwitter(env, imageUrl) {
   // 2. Twitter media upload API (v1.1)
   const uploadUrl = 'https://upload.twitter.com/1.1/media/upload.json';
 
+  // OAuth 서명에는 media_data를 포함하지 않음 (빈 객체 전달)
   const oauth = generateOAuthHeader(
     'POST',
     uploadUrl,
-    { media_data: base64Image },
+    {},
     env.TWITTER_API_KEY,
     env.TWITTER_API_SECRET,
     env.TWITTER_ACCESS_TOKEN,
