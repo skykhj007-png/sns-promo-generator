@@ -32,8 +32,21 @@ export async function onRequestGet(context) {
     // 5. OpenAI로 콘텐츠 생성
     const content = await generateThreadContent(env.OPENAI_API_KEY, mainCrypto, ethData, news, marketData);
 
-    // 3. 메인 트윗 게시
-    const mainTweet = await postToTwitter(env, content.mainTweet);
+    // 6. 차트 이미지 생성 (chart-img.com API)
+    let mediaId = null;
+    if (env.CHART_IMG_API_KEY) {
+      try {
+        const chartImageUrl = await generateChartImage(env.CHART_IMG_API_KEY, mainCrypto.symbol);
+        if (chartImageUrl) {
+          mediaId = await uploadMediaToTwitter(env, chartImageUrl);
+        }
+      } catch (chartError) {
+        console.error('Chart image error (continuing without image):', chartError);
+      }
+    }
+
+    // 7. 메인 트윗 게시 (이미지 포함)
+    const mainTweet = await postToTwitter(env, content.mainTweet, null, mediaId);
     const mainTweetId = mainTweet.data.id;
 
     // 4. 댓글 1: 매매 전략 (메인 트윗에 답글)
@@ -79,6 +92,102 @@ export async function onRequestGet(context) {
 // 딜레이 함수
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// chart-img.com API로 TradingView 차트 이미지 생성
+async function generateChartImage(apiKey, symbol = 'BTC') {
+  const tradingViewSymbol = symbol === 'BTC' ? 'BINANCE:BTCUSDT' : 'BINANCE:ETHUSDT';
+
+  const response = await fetch('https://api.chart-img.com/v1/tradingview/advanced-chart', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      symbol: tradingViewSymbol,
+      interval: '4h',
+      theme: 'dark',
+      width: 800,
+      height: 450,
+      studies: [
+        { name: 'RSI' },
+        { name: 'MACD' }
+      ],
+      drawings: [],
+      override: {
+        'paneProperties.background': '#1a1a2e',
+        'paneProperties.vertGridProperties.color': '#2a2a4a',
+        'paneProperties.horzGridProperties.color': '#2a2a4a'
+      }
+    })
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Chart-img API error: ${error}`);
+  }
+
+  // chart-img.com returns the image URL directly
+  const data = await response.json();
+  return data.url;
+}
+
+// ArrayBuffer를 Base64로 변환 (Cloudflare Workers 호환)
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunkSize = 8192;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+    binary += String.fromCharCode.apply(null, chunk);
+  }
+  return btoa(binary);
+}
+
+// Twitter에 이미지 업로드 (v1.1 media upload API)
+async function uploadMediaToTwitter(env, imageUrl) {
+  // 1. 이미지 다운로드
+  const imageResponse = await fetch(imageUrl);
+  if (!imageResponse.ok) {
+    throw new Error('Failed to download chart image');
+  }
+
+  const imageBuffer = await imageResponse.arrayBuffer();
+  const base64Image = arrayBufferToBase64(imageBuffer);
+
+  // 2. Twitter media upload API (v1.1)
+  const uploadUrl = 'https://upload.twitter.com/1.1/media/upload.json';
+
+  const oauth = generateOAuthHeader(
+    'POST',
+    uploadUrl,
+    { media_data: base64Image },
+    env.TWITTER_API_KEY,
+    env.TWITTER_API_SECRET,
+    env.TWITTER_ACCESS_TOKEN,
+    env.TWITTER_ACCESS_TOKEN_SECRET
+  );
+
+  const formData = new URLSearchParams();
+  formData.append('media_data', base64Image);
+
+  const response = await fetch(uploadUrl, {
+    method: 'POST',
+    headers: {
+      'Authorization': oauth,
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body: formData.toString()
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(`Twitter media upload error: ${JSON.stringify(data)}`);
+  }
+
+  return data.media_id_string;
 }
 
 // 실시간 크립토 뉴스 가져오기 (CryptoCompare 무료 API)
@@ -853,12 +962,16 @@ function getRandomPromoLink() {
   return links[index];
 }
 
-// Twitter에 게시 (답글 지원)
-async function postToTwitter(env, text, replyToId = null) {
+// Twitter에 게시 (답글 + 이미지 지원)
+async function postToTwitter(env, text, replyToId = null, mediaId = null) {
   const body = { text };
 
   if (replyToId) {
     body.reply = { in_reply_to_tweet_id: replyToId };
+  }
+
+  if (mediaId) {
+    body.media = { media_ids: [mediaId] };
   }
 
   const oauth = generateOAuthHeader(
