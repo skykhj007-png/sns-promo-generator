@@ -911,7 +911,7 @@ JSON만 출력.`;
       model: 'gpt-4o-mini',
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.7,
-      max_tokens: 1200
+      max_tokens: 2000
     })
   });
 
