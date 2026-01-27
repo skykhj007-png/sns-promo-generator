@@ -32,9 +32,22 @@ export async function onRequestGet(context) {
     // 5. OpenAI로 콘텐츠 생성
     const content = await generateThreadContent(env.OPENAI_API_KEY, mainCrypto, ethData, news, marketData);
 
-    // 6. 메인 트윗 게시 (이미지 기능은 별도 조사 후 활성화)
-    // TODO: Twitter 미디어 업로드 403 에러 해결 필요
-    const mainTweet = await postToTwitter(env, content.mainTweet);
+    // 6. 차트 이미지 생성 및 업로드
+    let mediaId = null;
+    if (env.CHART_IMG_API_KEY) {
+      try {
+        const imageBuffer = await generateChartImage(env.CHART_IMG_API_KEY, mainCrypto.symbol);
+        if (imageBuffer && imageBuffer.byteLength > 0) {
+          mediaId = await uploadMediaToTwitter(env, imageBuffer);
+        }
+      } catch (chartError) {
+        console.error('Chart image error:', chartError.message);
+        // 이미지 실패해도 텍스트는 게시
+      }
+    }
+
+    // 7. 메인 트윗 게시 (이미지 포함)
+    const mainTweet = await postToTwitter(env, content.mainTweet, null, mediaId);
     const mainTweetId = mainTweet.data.id;
 
     // 4. 댓글 1: 매매 전략 (메인 트윗에 답글)
@@ -82,7 +95,7 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// chart-img.com API로 TradingView 차트 이미지 생성
+// chart-img.com API로 TradingView 차트 이미지 생성 (바이너리 직접 반환)
 async function generateChartImage(apiKey, symbol = 'BTC') {
   const tradingViewSymbol = symbol === 'BTC' ? 'BINANCE:BTCUSDT' : 'BINANCE:ETHUSDT';
 
@@ -99,15 +112,8 @@ async function generateChartImage(apiKey, symbol = 'BTC') {
       width: 800,
       height: 450,
       studies: [
-        { name: 'RSI' },
-        { name: 'MACD' }
-      ],
-      drawings: [],
-      override: {
-        'paneProperties.background': '#1a1a2e',
-        'paneProperties.vertGridProperties.color': '#2a2a4a',
-        'paneProperties.horzGridProperties.color': '#2a2a4a'
-      }
+        { name: 'RSI' }
+      ]
     })
   });
 
@@ -116,9 +122,9 @@ async function generateChartImage(apiKey, symbol = 'BTC') {
     throw new Error(`Chart-img API error: ${error}`);
   }
 
-  // chart-img.com returns the image URL directly
-  const data = await response.json();
-  return data.url;
+  // chart-img.com은 이미지 바이너리를 직접 반환
+  const imageBuffer = await response.arrayBuffer();
+  return imageBuffer;
 }
 
 // ArrayBuffer를 Base64로 변환 (Cloudflare Workers 호환)
@@ -134,14 +140,8 @@ function arrayBufferToBase64(buffer) {
 }
 
 // Twitter에 이미지 업로드 (v1.1 media upload API)
-async function uploadMediaToTwitter(env, imageUrl) {
-  // 1. 이미지 다운로드
-  const imageResponse = await fetch(imageUrl);
-  if (!imageResponse.ok) {
-    throw new Error('Failed to download chart image');
-  }
-
-  const imageBuffer = await imageResponse.arrayBuffer();
+async function uploadMediaToTwitter(env, imageBuffer) {
+  // 이미지 버퍼를 base64로 변환
   const base64Image = arrayBufferToBase64(imageBuffer);
 
   // 2. Twitter media upload API (v1.1)
