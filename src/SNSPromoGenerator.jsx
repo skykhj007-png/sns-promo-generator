@@ -517,7 +517,7 @@ ${productName ? `제품명: ${productName}` : ''}`;
       }
 
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${aiApiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${aiApiKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1020,8 +1020,24 @@ ${productName ? `제품명: ${productName}` : ''}`;
       support: [],
       resistance: [],
       direction: 'neutral', // 'up', 'down', 'neutral'
-      targets: []
+      targets: [],
+      // 롱/숏 전략 정보
+      longEntry: null,
+      longTP: [],
+      longSL: null,
+      shortEntry: null,
+      shortTP: [],
+      shortSL: null,
+      // 시나리오 텍스트
+      scenario: '',
+      currentPrice: null
     };
+
+    // 현재가 추출
+    const priceMatch = result.match(/현재가[:\s]*\$?([\d,]+)/i);
+    if (priceMatch) {
+      analysis.currentPrice = priceMatch[1].replace(/,/g, '');
+    }
 
     // 지지선 추출 (다양한 패턴)
     const supportPatterns = [
@@ -1060,11 +1076,61 @@ ${productName ? `제품명: ${productName}` : ''}`;
       }
     });
 
+    // 롱 전략 추출
+    const longEntryMatch = result.match(/📈\s*롱[:\s]*진입[가\s]*\$?([\d,]+)/i) ||
+                           result.match(/롱\s*진입[가\s:]*\$?([\d,]+)/i);
+    if (longEntryMatch) {
+      analysis.longEntry = longEntryMatch[1].replace(/,/g, '');
+    }
+
+    // 롱 TP 추출
+    const longTPMatches = result.matchAll(/롱[^숏]*(?:TP|목표|타겟)[12]?[:\s]*\$?([\d,]+)/gi);
+    for (const match of longTPMatches) {
+      const tp = match[1].replace(/,/g, '');
+      if (!analysis.longTP.includes(tp)) {
+        analysis.longTP.push(tp);
+      }
+    }
+
+    // 롱 SL 추출
+    const longSLMatch = result.match(/롱[^숏]*(?:SL|손절|스탑)[:\s]*\$?([\d,]+)/i);
+    if (longSLMatch) {
+      analysis.longSL = longSLMatch[1].replace(/,/g, '');
+    }
+
+    // 숏 전략 추출
+    const shortEntryMatch = result.match(/📉\s*숏[:\s]*진입[가\s]*\$?([\d,]+)/i) ||
+                            result.match(/숏\s*진입[가\s:]*\$?([\d,]+)/i);
+    if (shortEntryMatch) {
+      analysis.shortEntry = shortEntryMatch[1].replace(/,/g, '');
+    }
+
+    // 숏 TP 추출
+    const shortTPMatches = result.matchAll(/숏[^롱]*(?:TP|목표|타겟)[12]?[:\s]*\$?([\d,]+)/gi);
+    for (const match of shortTPMatches) {
+      const tp = match[1].replace(/,/g, '');
+      if (!analysis.shortTP.includes(tp)) {
+        analysis.shortTP.push(tp);
+      }
+    }
+
+    // 숏 SL 추출
+    const shortSLMatch = result.match(/숏[^롱]*(?:SL|손절|스탑)[:\s]*\$?([\d,]+)/i);
+    if (shortSLMatch) {
+      analysis.shortSL = shortSLMatch[1].replace(/,/g, '');
+    }
+
     // 방향성 추출
     if (/상승|롱|매수|강세|bullish|상방/i.test(result)) {
       analysis.direction = 'up';
     } else if (/하락|숏|매도|약세|bearish|하방/i.test(result)) {
       analysis.direction = 'down';
+    }
+
+    // 시나리오/전략 요약 추출
+    const scenarioMatch = result.match(/(?:시나리오|전략|관점)[:\s]*([^\n]+)/i);
+    if (scenarioMatch) {
+      analysis.scenario = scenarioMatch[1].trim();
     }
 
     return analysis;
@@ -1534,7 +1600,7 @@ ${useTrendAnalysis ? '\n트렌드를 반영한 해시태그와 표현을 적극 
       }
 
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${aiApiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${aiApiKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -2956,19 +3022,54 @@ ${useTrendAnalysis ? '\n트렌드를 반영한 해시태그와 표현을 적극 
               </button>
             </div>
 
-            {/* 텔레그램 스타일 카드 */}
+            {/* 코인스쿨 스타일 분석 카드 */}
             <div
               ref={cardPreviewRef}
               style={{
                 width: '100%',
                 maxWidth: '500px',
-                backgroundColor: '#1a1a2e',
+                backgroundColor: '#ffffff',
                 borderRadius: '16px',
                 overflow: 'hidden',
-                fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+                fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
               }}
             >
-              {/* 차트 이미지 + 분석 오버레이 */}
+              {/* 상단 헤더 */}
+              <div style={{
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                padding: '12px 16px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '20px' }}>📊</span>
+                  <span style={{ color: '#fff', fontWeight: '700', fontSize: '14px' }}>
+                    {productName || 'BTC/USDT'} 트레이딩 관점
+                  </span>
+                </div>
+                {(() => {
+                  const chartAnalysis = extractChartAnalysis(imageAnalysisResult);
+                  if (!chartAnalysis) return null;
+                  return (
+                    <div style={{
+                      backgroundColor: chartAnalysis.direction === 'up' ? '#22c55e' :
+                                      chartAnalysis.direction === 'down' ? '#ef4444' : '#6b7280',
+                      padding: '4px 10px',
+                      borderRadius: '12px',
+                      color: '#fff',
+                      fontSize: '12px',
+                      fontWeight: '600'
+                    }}>
+                      {chartAnalysis.direction === 'up' ? '🟢 롱 우세' :
+                       chartAnalysis.direction === 'down' ? '🔴 숏 우세' : '⚪ 관망'}
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* 차트 이미지 */}
               <div style={{ position: 'relative' }}>
                 <img
                   src={productImagePreview}
@@ -2979,69 +3080,31 @@ ${useTrendAnalysis ? '\n트렌드를 반영한 해시태그와 표현을 적극 
                     display: 'block'
                   }}
                 />
-                {/* 상단 코인명 오버레이 */}
-                <div style={{
-                  position: 'absolute',
-                  top: '12px',
-                  left: '12px',
-                  backgroundColor: 'rgba(0,0,0,0.7)',
-                  padding: '6px 12px',
-                  borderRadius: '8px',
-                  color: '#fff',
-                  fontSize: '12px',
-                  fontWeight: '600'
-                }}>
-                  {productName || 'BTC/USDT'} · 차트 분석
-                </div>
-
-                {/* 방향 화살표 오버레이 */}
+                {/* 차트 오버레이 */}
                 {(() => {
                   const chartAnalysis = extractChartAnalysis(imageAnalysisResult);
                   if (!chartAnalysis) return null;
 
                   return (
                     <>
-                      {/* 방향 표시 (우측 상단) */}
-                      <div style={{
-                        position: 'absolute',
-                        top: '12px',
-                        right: '12px',
-                        backgroundColor: chartAnalysis.direction === 'up' ? 'rgba(34, 197, 94, 0.9)' :
-                                        chartAnalysis.direction === 'down' ? 'rgba(239, 68, 68, 0.9)' :
-                                        'rgba(156, 163, 175, 0.9)',
-                        padding: '8px 14px',
-                        borderRadius: '8px',
-                        color: '#fff',
-                        fontSize: '14px',
-                        fontWeight: '700',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
-                      }}>
-                        {chartAnalysis.direction === 'up' ? '📈 상승' :
-                         chartAnalysis.direction === 'down' ? '📉 하락' : '➡️ 횡보'}
-                      </div>
-
-                      {/* 저항선 표시 (상단) */}
+                      {/* 저항선 */}
                       {chartAnalysis.resistance.length > 0 && (
                         <div style={{
                           position: 'absolute',
-                          top: '20%',
+                          top: '15%',
                           left: '0',
                           right: '0',
-                          borderTop: '2px dashed #ef4444',
-                          opacity: 0.8
+                          borderTop: '2px dashed #ef4444'
                         }}>
                           <span style={{
                             position: 'absolute',
                             right: '8px',
-                            top: '-10px',
+                            top: '4px',
                             backgroundColor: '#ef4444',
                             color: '#fff',
                             padding: '2px 8px',
                             borderRadius: '4px',
-                            fontSize: '11px',
+                            fontSize: '10px',
                             fontWeight: '600'
                           }}>
                             저항 ${Number(chartAnalysis.resistance[0]).toLocaleString()}
@@ -3049,94 +3112,234 @@ ${useTrendAnalysis ? '\n트렌드를 반영한 해시태그와 표현을 적극 
                         </div>
                       )}
 
-                      {/* 지지선 표시 (하단) */}
+                      {/* 지지선 */}
                       {chartAnalysis.support.length > 0 && (
                         <div style={{
                           position: 'absolute',
-                          bottom: '20%',
+                          bottom: '15%',
                           left: '0',
                           right: '0',
-                          borderTop: '2px dashed #22c55e',
-                          opacity: 0.8
+                          borderTop: '2px dashed #22c55e'
                         }}>
                           <span style={{
                             position: 'absolute',
                             right: '8px',
-                            top: '-10px',
+                            bottom: '4px',
                             backgroundColor: '#22c55e',
                             color: '#fff',
                             padding: '2px 8px',
                             borderRadius: '4px',
-                            fontSize: '11px',
+                            fontSize: '10px',
                             fontWeight: '600'
                           }}>
                             지지 ${Number(chartAnalysis.support[0]).toLocaleString()}
                           </span>
                         </div>
                       )}
-
-                      {/* 예상 방향 화살표 (중앙) */}
-                      <div style={{
-                        position: 'absolute',
-                        top: '50%',
-                        right: '15%',
-                        transform: 'translateY(-50%)',
-                        fontSize: '48px',
-                        opacity: 0.7,
-                        textShadow: '0 2px 10px rgba(0,0,0,0.5)'
-                      }}>
-                        {chartAnalysis.direction === 'up' ? '⬆️' :
-                         chartAnalysis.direction === 'down' ? '⬇️' : '↔️'}
-                      </div>
                     </>
                   );
                 })()}
               </div>
 
-              {/* 분석 텍스트 */}
+              {/* 시나리오 섹션 */}
               <div style={{
-                padding: '20px',
-                color: '#e5e7eb',
-                fontSize: '14px',
-                lineHeight: '1.8'
+                padding: '16px',
+                backgroundColor: '#fef3c7',
+                borderLeft: '4px solid #f59e0b'
               }}>
                 <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  marginBottom: '8px'
+                }}>
+                  <span style={{ fontSize: '16px' }}>💡</span>
+                  <span style={{ fontWeight: '700', color: '#92400e', fontSize: '13px' }}>대응 시나리오</span>
+                </div>
+                <div style={{
+                  color: '#78350f',
+                  fontSize: '13px',
+                  lineHeight: '1.6',
                   whiteSpace: 'pre-wrap'
                 }}>
-                  {extractSNSContent(imageAnalysisResult)}
+                  {extractSNSContent(imageAnalysisResult).split('\n').slice(0, 5).join('\n')}
                 </div>
+              </div>
 
-                {/* 하단 정보 */}
+              {/* 롱/숏 전략 박스 */}
+              {(() => {
+                const chartAnalysis = extractChartAnalysis(imageAnalysisResult);
+                if (!chartAnalysis) return null;
+
+                return (
+                  <div style={{ display: 'flex', gap: '0' }}>
+                    {/* 롱 전략 */}
+                    <div style={{
+                      flex: 1,
+                      padding: '12px',
+                      backgroundColor: '#dcfce7',
+                      borderRight: '1px solid #bbf7d0'
+                    }}>
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        marginBottom: '8px'
+                      }}>
+                        <span style={{ fontSize: '14px' }}>📈</span>
+                        <span style={{ fontWeight: '700', color: '#166534', fontSize: '12px' }}>롱 전략</span>
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#15803d', lineHeight: '1.8' }}>
+                        {chartAnalysis.longEntry && (
+                          <div>진입: <strong>${Number(chartAnalysis.longEntry).toLocaleString()}</strong></div>
+                        )}
+                        {chartAnalysis.longTP.length > 0 && (
+                          <div>TP: <strong>${chartAnalysis.longTP.map(t => Number(t).toLocaleString()).join(' / $')}</strong></div>
+                        )}
+                        {chartAnalysis.longSL && (
+                          <div>SL: <strong style={{ color: '#dc2626' }}>${Number(chartAnalysis.longSL).toLocaleString()}</strong></div>
+                        )}
+                        {!chartAnalysis.longEntry && !chartAnalysis.longTP.length && !chartAnalysis.longSL && (
+                          <div style={{ color: '#6b7280' }}>분석 결과 참고</div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 숏 전략 */}
+                    <div style={{
+                      flex: 1,
+                      padding: '12px',
+                      backgroundColor: '#fee2e2'
+                    }}>
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        marginBottom: '8px'
+                      }}>
+                        <span style={{ fontSize: '14px' }}>📉</span>
+                        <span style={{ fontWeight: '700', color: '#991b1b', fontSize: '12px' }}>숏 전략</span>
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#b91c1c', lineHeight: '1.8' }}>
+                        {chartAnalysis.shortEntry && (
+                          <div>진입: <strong>${Number(chartAnalysis.shortEntry).toLocaleString()}</strong></div>
+                        )}
+                        {chartAnalysis.shortTP.length > 0 && (
+                          <div>TP: <strong>${chartAnalysis.shortTP.map(t => Number(t).toLocaleString()).join(' / $')}</strong></div>
+                        )}
+                        {chartAnalysis.shortSL && (
+                          <div>SL: <strong style={{ color: '#22c55e' }}>${Number(chartAnalysis.shortSL).toLocaleString()}</strong></div>
+                        )}
+                        {!chartAnalysis.shortEntry && !chartAnalysis.shortTP.length && !chartAnalysis.shortSL && (
+                          <div style={{ color: '#6b7280' }}>분석 결과 참고</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* 주요 지지/저항 레벨 */}
+              {(() => {
+                const chartAnalysis = extractChartAnalysis(imageAnalysisResult);
+                if (!chartAnalysis || (chartAnalysis.support.length === 0 && chartAnalysis.resistance.length === 0)) return null;
+
+                return (
+                  <div style={{
+                    padding: '12px 16px',
+                    backgroundColor: '#f8fafc',
+                    borderTop: '1px solid #e2e8f0'
+                  }}>
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      marginBottom: '8px'
+                    }}>
+                      <span style={{ fontSize: '14px' }}>🎯</span>
+                      <span style={{ fontWeight: '700', color: '#475569', fontSize: '12px' }}>주요 레벨</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      {chartAnalysis.resistance.slice(0, 3).map((level, idx) => (
+                        <span key={`r-${idx}`} style={{
+                          backgroundColor: '#fecaca',
+                          color: '#dc2626',
+                          padding: '4px 8px',
+                          borderRadius: '6px',
+                          fontSize: '11px',
+                          fontWeight: '600'
+                        }}>
+                          저항 ${Number(level).toLocaleString()}
+                        </span>
+                      ))}
+                      {chartAnalysis.support.slice(0, 3).map((level, idx) => (
+                        <span key={`s-${idx}`} style={{
+                          backgroundColor: '#bbf7d0',
+                          color: '#166534',
+                          padding: '4px 8px',
+                          borderRadius: '6px',
+                          fontSize: '11px',
+                          fontWeight: '600'
+                        }}>
+                          지지 ${Number(level).toLocaleString()}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* 텔레그램 & 레퍼럴 정보 */}
+              {(telegramUrl || referralCode) && (
                 <div style={{
-                  marginTop: '16px',
-                  paddingTop: '12px',
-                  borderTop: '1px solid #374151',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  color: '#9ca3af',
-                  fontSize: '12px'
+                  padding: '12px 16px',
+                  backgroundColor: '#eff6ff',
+                  borderTop: '1px solid #bfdbfe'
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <span style={{ color: '#ef4444' }}>❤️</span>
-                    <span>{Math.floor(Math.random() * 500) + 100}</span>
+                  <div style={{ fontSize: '11px', color: '#1e40af', lineHeight: '1.6' }}>
+                    {telegramUrl && (
+                      <div style={{ marginBottom: '4px' }}>
+                        📢 <strong>텔레그램:</strong> {telegramUrl}
+                      </div>
+                    )}
+                    {referralCode && (
+                      <div>
+                        🔥 <strong>거래소:</strong> {referralCode}
+                      </div>
+                    )}
                   </div>
-                  <div>
-                    {new Date().toLocaleString('ko-KR', {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                      hour12: true
-                    })}
-                  </div>
+                </div>
+              )}
+
+              {/* 하단 타임스탬프 */}
+              <div style={{
+                padding: '10px 16px',
+                backgroundColor: '#f1f5f9',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                borderTop: '1px solid #e2e8f0'
+              }}>
+                <div style={{ fontSize: '10px', color: '#64748b' }}>
+                  {new Date().toLocaleString('ko-KR', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })}
+                </div>
+                <div style={{ fontSize: '10px', color: '#94a3b8' }}>
+                  AI 차트 분석
                 </div>
               </div>
 
               {/* 주의 문구 */}
               <div style={{
-                padding: '12px 20px',
-                backgroundColor: '#2d2d44',
-                color: '#f59e0b',
-                fontSize: '11px',
+                padding: '10px 16px',
+                backgroundColor: '#fef2f2',
+                color: '#dc2626',
+                fontSize: '10px',
                 textAlign: 'center'
               }}>
                 ⚠️ 본 분석은 개인적인 의견이며 투자 권유가 아닙니다

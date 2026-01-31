@@ -35,8 +35,19 @@ export async function onRequestGet(context) {
     // 6. OpenAI로 Threads용 콘텐츠 생성
     const content = await generateThreadsContent(env.OPENAI_API_KEY, mainCrypto, ethData, news, marketData);
 
-    // 4. 메인 포스트 게시
-    const mainPost = await postToThreads(env.THREADS_ACCESS_TOKEN, userId, content.mainPost);
+    // 7. 차트 이미지 URL 생성 (API 키가 있는 경우)
+    let imageUrl = null;
+    if (env.CHART_IMG_API_KEY) {
+      try {
+        imageUrl = generateChartImageUrl(env.CHART_IMG_API_KEY, mainCrypto.symbol);
+        console.log('Chart image URL generated:', imageUrl);
+      } catch (imgError) {
+        console.error('Chart image URL error:', imgError.message);
+      }
+    }
+
+    // 8. 메인 포스트 게시 (이미지 포함)
+    const mainPost = await postToThreads(env.THREADS_ACCESS_TOKEN, userId, content.mainPost, null, imageUrl);
 
     // 5. 댓글 1: 매매 전략 (메인 포스트에 답글)
     await delay(3000);
@@ -58,6 +69,8 @@ export async function onRequestGet(context) {
         strategy: reply1.id,
         promo: reply2.id
       },
+      hasImage: !!imageUrl,
+      imageUrl: imageUrl,
       cryptoData: mainCrypto,
       ethData: ethData,
       marketData: marketData,
@@ -418,14 +431,35 @@ async function getThreadsUserId(accessToken) {
   return data.id;
 }
 
-// Threads에 게시 (답글 지원)
-async function postToThreads(accessToken, userId, text, replyToId = null) {
+// chart-img.com URL 생성 (GET 방식)
+function generateChartImageUrl(apiKey, symbol = 'BTC') {
+  const tradingViewSymbol = symbol === 'BTC' ? 'BINANCE:BTCUSDT' : 'BINANCE:ETHUSDT';
+
+  const params = new URLSearchParams({
+    key: apiKey,
+    symbol: tradingViewSymbol,
+    interval: '4h',
+    theme: 'dark',
+    width: 800,
+    height: 450,
+    studies: 'RSI'
+  });
+
+  return `https://api.chart-img.com/v1/tradingview/advanced-chart?${params.toString()}`;
+}
+
+// Threads에 게시 (답글 + 이미지 지원)
+async function postToThreads(accessToken, userId, text, replyToId = null, imageUrl = null) {
   // Step 1: 미디어 컨테이너 생성
   const createParams = new URLSearchParams({
-    media_type: 'TEXT',
+    media_type: imageUrl ? 'IMAGE' : 'TEXT',
     text: text,
     access_token: accessToken
   });
+
+  if (imageUrl) {
+    createParams.append('image_url', imageUrl);
+  }
 
   if (replyToId) {
     createParams.append('reply_to_id', replyToId);
