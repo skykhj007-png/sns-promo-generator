@@ -8,7 +8,9 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "deploy": "vite build && npx wrangler pages deploy dist --project-name=sns-promo-generator"
+    "deploy": "vite build && npx wrangler pages deploy dist --project-name=sns-promo-generator",
+    "config:encrypt": "node scripts/config-crypto.cjs encrypt",
+    "config:decrypt": "node scripts/config-crypto.cjs decrypt"
   },
   "dependencies": {
     "crypto-js": "^4.2.0",

@@ -2,8 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Copy, Upload, ChevronDown, ChevronUp, Instagram, Facebook, Twitter, Sparkles, Target, MessageSquare, Hash, Image, Zap, Settings, Loader, Key, Camera, Eye, X, Lock, Shield, AlertTriangle, TrendingUp, Download } from 'lucide-react';
 import html2canvas from 'html2canvas';
 
-// v1.6 - 패턴 분석 기능 추가 (2026-01-09)
-const API_URL = 'https://blog-gen-api.myblog-tools.workers.dev';
+// v1.7 - 민감정보 환경변수 분리 (2026-02-17)
+const API_URL = import.meta.env.VITE_API_URL || 'https://blog-gen-api.myblog-tools.workers.dev';
+const DEFAULT_REFERRAL_CODE = import.meta.env.VITE_REFERRAL_CODE || '';
+const DEFAULT_TELEGRAM_URL = import.meta.env.VITE_TELEGRAM_URL || '';
+const BITGET_PARTNER_URL = import.meta.env.VITE_BITGET_PARTNER_URL || '';
 
 const SNSPromoGenerator = () => {
   // 플랫폼 선택 (다중 선택 가능)
@@ -74,8 +77,8 @@ const SNSPromoGenerator = () => {
   const [isDownloading, setIsDownloading] = useState(false);
 
   // 암호화폐 분석 관련 추가 필드
-  const [referralCode, setReferralCode] = useState('63sl3029'); // 레퍼럴 코드 (비트겟 추천인)
-  const [telegramUrl, setTelegramUrl] = useState('https://t.me/V30_Signal_bot'); // 텔레그램 주소
+  const [referralCode, setReferralCode] = useState(DEFAULT_REFERRAL_CODE); // 레퍼럴 코드 (비트겟 추천인)
+  const [telegramUrl, setTelegramUrl] = useState(DEFAULT_TELEGRAM_URL); // 텔레그램 주소
   const [cryptoTimeframe, setCryptoTimeframe] = useState('4H'); // 분석 시간대
   const [cryptoSymbol, setCryptoSymbol] = useState('BTC'); // 코인 심볼
   const [patternAnalysisResult, setPatternAnalysisResult] = useState(null); // 패턴 분석 결과
@@ -377,7 +380,7 @@ ${selectedPlatforms.includes('threads') ? `
 📉 숏: 진입 / TP1 / TP2 / SL
 
 🔥 텔레그램에서 제가 직접 제작한 시그널 지표 무료 공유! 실시간 차트 분석 & 토론 함께해요!
-👉 비트겟: https://partner.bitget.com/bg/AZ6Z8S (추천인: 63sl3029)
+👉 비트겟: ${BITGET_PARTNER_URL} (추천인: ${DEFAULT_REFERRAL_CODE})
 📢 채널: https://t.me/V38_Signal
 
 #BTC #비트코인 #차트분석 #매매전략 #코인
@@ -397,7 +400,7 @@ ${selectedPlatforms.includes('threads') ? `
 - 시장 심리 (공포/탐욕)
 
 💬 더 자세한 분석이 궁금하시면 텔레그램에서 만나요!
-문의: https://t.me/V30_Signal_bot
+문의: ${DEFAULT_TELEGRAM_URL}
 ` : ''}${selectedPlatforms.includes('instagram') ? `
 ---인스타그램--- (1500~2000자 상세하게!)
 
@@ -428,9 +431,9 @@ ${selectedPlatforms.includes('threads') ? `
 
 🔥 텔레그램 채널에서 제가 직접 제작한 시그널 지표를 무료로 공유하고 있습니다! 실시간으로 차트 분석하고 함께 토론해요!
 
-👉 비트겟 가입: https://partner.bitget.com/bg/AZ6Z8S (추천인: 63sl3029)
+👉 비트겟 가입: ${BITGET_PARTNER_URL} (추천인: ${DEFAULT_REFERRAL_CODE})
 📢 텔레그램 채널: https://t.me/V38_Signal
-💬 문의: https://t.me/V30_Signal_bot
+💬 문의: ${DEFAULT_TELEGRAM_URL}
 
 해시태그 15개
 
@@ -472,9 +475,9 @@ ${selectedPlatforms.includes('threads') ? `
 - 청산 레벨, 펀딩비, OI 추세
 
 🔥 텔레그램에서 제가 직접 만든 시그널 지표 무료 공유! 함께 차트 보며 토론해요!
-👉 비트겟: https://partner.bitget.com/bg/AZ6Z8S (추천인: 63sl3029)
+👉 비트겟: ${BITGET_PARTNER_URL} (추천인: ${DEFAULT_REFERRAL_CODE})
 📢 텔레그램: https://t.me/V38_Signal
-💬 문의: https://t.me/V30_Signal_bot
+💬 문의: ${DEFAULT_TELEGRAM_URL}
 
 #BTC #비트코인 #차트분석 #매매전략 #코인
 
@@ -2215,7 +2218,7 @@ ${useTrendAnalysis ? '\n트렌드를 반영한 해시태그와 표현을 적극 
               if (isCryptoAvailable()) {
                 setContentType('crypto');
               } else {
-                alert('🔒 암호화폐 차트 분석 기능\n\n이 기능은 별도 권한이 필요합니다.\n\n📢 비트겟 가입 (추천인: 63sl3029)\nhttps://partner.bitget.com/bg/AZ6Z8S\n\n문의: 텔레그램 @V30_Signal_bot');
+                alert(`🔒 암호화폐 차트 분석 기능\n\n이 기능은 별도 권한이 필요합니다.\n\n📢 비트겟 가입 (추천인: ${DEFAULT_REFERRAL_CODE})\n${BITGET_PARTNER_URL}\n\n문의: 텔레그램 ${DEFAULT_TELEGRAM_URL}`);
               }
             }}
             style={{
